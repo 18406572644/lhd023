@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useCallback } from 'react'
 import { Modal, Typography, Button, Space } from 'antd'
-import { BellOutlined, CheckOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { BellOutlined, CheckOutlined, ClockCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task } from '../types'
 
@@ -15,43 +15,90 @@ interface NotificationModalProps {
 
 const snoozeOptions = [5, 10, 30, 60]
 
+function playNotificationSound() {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContext) {
+      console.warn('浏览器不支持 Web Audio API')
+      return
+    }
+
+    const audioContext = new AudioContext()
+
+    const playTone = (frequency: number, startTime: number, duration: number, volume: number = 0.3) => {
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+
+      oscillator.frequency.value = frequency
+      oscillator.type = 'sine'
+
+      gainNode.gain.setValueAtTime(0, startTime)
+      gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.02)
+      gainNode.gain.linearRampToValueAtTime(0, startTime + duration)
+
+      oscillator.start(startTime)
+      oscillator.stop(startTime + duration)
+    }
+
+    const now = audioContext.currentTime
+    playTone(880, now, 0.15, 0.3)
+    playTone(880, now + 0.25, 0.15, 0.3)
+    playTone(1100, now + 0.5, 0.3, 0.4)
+
+    setTimeout(() => {
+      audioContext.close()
+    }, 2000)
+  } catch (err) {
+    console.error('播放声音失败:', err)
+  }
+}
+
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   open,
   task,
   onClose,
   onSnooze
 }) => {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const hasPlayedRef = useRef(false)
 
-  useEffect(() => {
-    if (open && task?.soundEnabled && audioRef.current) {
-      audioRef.current.currentTime = 0
-      audioRef.current.play().catch(() => {})
-    }
-  }, [open, task])
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause()
-      }
+  const playSound = useCallback(() => {
+    if (!hasPlayedRef.current) {
+      hasPlayedRef.current = true
+      playNotificationSound()
     }
   }, [])
+
+  useEffect(() => {
+    if (open && task) {
+      hasPlayedRef.current = false
+      if (task.soundEnabled) {
+        setTimeout(() => {
+          playSound()
+        }, 100)
+      }
+    }
+    return () => {
+      hasPlayedRef.current = false
+    }
+  }, [open, task, playSound])
 
   if (!task) return null
 
   const handleSnooze = (minutes: number) => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-    }
+    hasPlayedRef.current = false
     onSnooze(minutes)
   }
 
   const handleClose = () => {
-    if (audioRef.current) {
-      audioRef.current.pause()
-    }
+    hasPlayedRef.current = false
     onClose()
+  }
+
+  const handleTestSound = () => {
+    playNotificationSound()
   }
 
   return (
@@ -64,9 +111,6 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       destroyOnClose
       maskClosable={false}
     >
-      <audio ref={audioRef} preload="auto">
-        <source src="/notification.wav" type="audio/wav" />
-      </audio>
       <div style={{ textAlign: 'center', padding: '20px 0' }}>
         <div
           style={{
@@ -77,7 +121,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 20px'
+            margin: '0 auto 20px',
+            animation: 'pulse 1.5s ease-in-out infinite'
           }}
         >
           <BellOutlined style={{ fontSize: 32, color: '#1677ff' }} />
@@ -95,6 +140,19 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           <ClockCircleOutlined style={{ marginRight: 4 }} />
           {dayjs().format('YYYY-MM-DD HH:mm')}
         </Text>
+
+        {task.soundEnabled && (
+          <div style={{ marginBottom: 16 }}>
+            <Button
+              size="small"
+              icon={<SoundOutlined />}
+              onClick={handleTestSound}
+              type="text"
+            >
+              测试声音
+            </Button>
+          </div>
+        )}
 
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <Button
@@ -123,6 +181,13 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           </Space>
         </Space>
       </div>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.1); }
+        }
+      `}</style>
     </Modal>
   )
 }

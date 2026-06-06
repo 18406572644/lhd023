@@ -72,20 +72,52 @@ export const storage = {
 
   async notify(title: string, body: string): Promise<void> {
     try {
+      console.log('[Storage] 发送通知:', title, body)
+
       if (isElectron()) {
+        console.log('[Storage] 使用 Electron 通知')
         await window.api!.notify(title, body)
-      } else if ('Notification' in window) {
+      }
+
+      if ('Notification' in window) {
         if (Notification.permission === 'granted') {
-          new Notification(title, { body })
-        } else if (Notification.permission !== 'denied') {
-          const permission = await Notification.requestPermission()
-          if (permission === 'granted') {
-            new Notification(title, { body })
+          console.log('[Storage] 使用浏览器通知')
+          const notification = new Notification(title, {
+            body,
+            icon: '/bell.png',
+            badge: '/bell.png'
+          })
+
+          notification.onclick = () => {
+            console.log('[Storage] 通知被点击')
+            window.focus()
+            notification.close()
           }
+
+          setTimeout(() => {
+            notification.close()
+          }, 10000)
+        } else {
+          console.log('[Storage] 浏览器通知权限:', Notification.permission)
         }
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[Storage] 发送通知失败:', err)
+    }
+  },
+
+  async requestNotificationPermission(): Promise<NotificationPermission | null> {
+    try {
+      if ('Notification' in window && Notification.permission === 'default') {
+        console.log('[Storage] 请求通知权限...')
+        const permission = await Notification.requestPermission()
+        console.log('[Storage] 通知权限结果:', permission)
+        return permission
+      }
+      return Notification.permission || null
+    } catch (err) {
+      console.error('[Storage] 请求通知权限失败:', err)
+      return null
     }
   }
 }

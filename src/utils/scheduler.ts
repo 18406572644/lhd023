@@ -1,6 +1,8 @@
 import dayjs from 'dayjs'
 import type { Task } from '../types'
 
+const TRIGGER_WINDOW_MINUTES = 5
+
 export function shouldTriggerTask(task: Task, now: dayjs.Dayjs): boolean {
   if (!task.enabled) return false
 
@@ -8,18 +10,17 @@ export function shouldTriggerTask(task: Task, now: dayjs.Dayjs): boolean {
 
   switch (task.repeatType) {
     case 'none': {
-      return now.isAfter(target) && now.diff(target, 'minute') < 2
+      const diffMinutes = now.diff(target, 'minute')
+      return now.isAfter(target) && diffMinutes >= 0 && diffMinutes < TRIGGER_WINDOW_MINUTES
     }
     case 'daily': {
       const targetToday = now
         .hour(target.hour())
         .minute(target.minute())
         .second(0)
-      return (
-        now.isAfter(targetToday) &&
-        now.diff(targetToday, 'minute') < 2 &&
-        now.format('YYYY-MM-DD') !== dayjs(task.createdAt).format('YYYY-MM-DD')
-      )
+        .millisecond(0)
+      const diffMinutes = now.diff(targetToday, 'minute')
+      return diffMinutes >= 0 && diffMinutes < TRIGGER_WINDOW_MINUTES
     }
     case 'weekly': {
       const targetWeekday = target.day()
@@ -30,10 +31,9 @@ export function shouldTriggerTask(task: Task, now: dayjs.Dayjs): boolean {
         .hour(target.hour())
         .minute(target.minute())
         .second(0)
-      return (
-        now.isAfter(targetToday) &&
-        now.diff(targetToday, 'minute') < 2
-      )
+        .millisecond(0)
+      const diffMinutes = now.diff(targetToday, 'minute')
+      return diffMinutes >= 0 && diffMinutes < TRIGGER_WINDOW_MINUTES
     }
     case 'monthly': {
       const targetDate = target.date()
@@ -44,15 +44,14 @@ export function shouldTriggerTask(task: Task, now: dayjs.Dayjs): boolean {
         .hour(target.hour())
         .minute(target.minute())
         .second(0)
-      return (
-        now.isAfter(targetToday) &&
-        now.diff(targetToday, 'minute') < 2
-      )
+        .millisecond(0)
+      const diffMinutes = now.diff(targetToday, 'minute')
+      return diffMinutes >= 0 && diffMinutes < TRIGGER_WINDOW_MINUTES
     }
     case 'custom': {
       if (!task.repeatInterval) return false
       const diffMinutes = now.diff(target, 'minute')
-      return diffMinutes > 0 && diffMinutes % task.repeatInterval < 2
+      return diffMinutes > 0 && diffMinutes % task.repeatInterval < TRIGGER_WINDOW_MINUTES
     }
     default:
       return false
