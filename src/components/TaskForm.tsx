@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react'
-import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox } from 'antd'
+import React, { useEffect, useState } from 'react'
+import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip } from 'antd'
+import { PlayCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task, TaskRepeatType } from '../types'
+import type { Task, SoundOption } from '../types'
+import { soundManager } from '../utils/soundManager'
 
 const { TextArea } = Input
 const { Option } = Select
@@ -25,7 +27,22 @@ const weekDays = [
 
 export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubmit }) => {
   const [form] = Form.useForm()
+  const [sounds, setSounds] = useState<SoundOption[]>([])
+  const [defaultSoundId, setDefaultSoundId] = useState<string>('')
   const repeatType = Form.useWatch('repeatType', form)
+  const soundEnabled = Form.useWatch('soundEnabled', form)
+
+  useEffect(() => {
+    const loadSounds = async () => {
+      const [loadedSounds, loadedDefault] = await Promise.all([
+        soundManager.getAllSounds(),
+        soundManager.getDefaultSoundId()
+      ])
+      setSounds(loadedSounds)
+      setDefaultSoundId(loadedDefault)
+    }
+    loadSounds()
+  }, [])
 
   useEffect(() => {
     if (open) {
@@ -38,7 +55,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
           repeatInterval: task.repeatInterval,
           repeatDays: task.repeatDays,
           enabled: task.enabled,
-          soundEnabled: task.soundEnabled
+          soundEnabled: task.soundEnabled,
+          soundId: task.soundId
         })
       } else {
         form.resetFields()
@@ -62,11 +80,19 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
         repeatInterval: values.repeatInterval,
         repeatDays: values.repeatDays,
         enabled: values.enabled,
-        soundEnabled: values.soundEnabled
+        soundEnabled: values.soundEnabled,
+        soundId: values.soundId
       }
       onSubmit(taskData)
       form.resetFields()
     })
+  }
+
+  const handlePlaySound = (soundId: string) => {
+    const sound = sounds.find(s => s.id === soundId)
+    if (sound) {
+      soundManager.playSound(sound)
+    }
   }
 
   return (
@@ -152,6 +178,66 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
             </Form.Item>
           </Col>
         </Row>
+
+        {soundEnabled && (
+          <Form.Item
+            name="soundId"
+            label={
+              <Space>
+                <SoundOutlined />
+                提醒铃声
+              </Space>
+            }
+            tooltip="选择该任务的提醒铃声，不选则使用全局默认铃声"
+          >
+            <Select
+              placeholder="使用全局默认铃声"
+              allowClear
+              optionLabelProp="label"
+              style={{ width: '100%' }}
+            >
+              <Option value="" label={`默认 (${sounds.find(s => s.id === defaultSoundId)?.name || '轻柔'})`}>
+                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                  <span>使用全局默认铃声</span>
+                  <Tooltip title="播放">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PlayCircleOutlined />}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handlePlaySound(defaultSoundId)
+                      }}
+                    />
+                  </Tooltip>
+                </Space>
+              </Option>
+              {sounds.map((sound) => (
+                <Option key={sound.id} value={sound.id} label={sound.name}>
+                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Space>
+                      <span>{sound.name}</span>
+                      {!sound.isBuiltIn && (
+                        <span style={{ color: '#9254de', fontSize: 12 }}>自定义</span>
+                      )}
+                    </Space>
+                    <Tooltip title="播放">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<PlayCircleOutlined />}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handlePlaySound(sound.id)
+                        }}
+                      />
+                    </Tooltip>
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )}
       </Form>
     </Modal>
   )

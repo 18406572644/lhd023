@@ -31,6 +31,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, onClear }) 
       dataIndex: 'triggeredAt',
       key: 'triggeredAt',
       width: '30%',
+      sorter: (a: any, b: any) => dayjs(a.triggeredAt).valueOf() - dayjs(b.triggeredAt).valueOf(),
+      defaultSortOrder: 'descend' as const,
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm:ss')
     },
     {
@@ -80,9 +82,6 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({ history, onClear }) 
           showSizeChanger: false,
           showQuickJumper: true
         }}
-        sortDirections={['descend']}
-        defaultSortOrder="descend"
-        defaultSortField="triggeredAt"
         showSorterTooltip={false}
       />
     </div>

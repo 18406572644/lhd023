@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useCallback } from 'react'
-import { Modal, Typography, Button, Space } from 'antd'
+import { Modal, Typography, Button, Space, Tag } from 'antd'
 import { BellOutlined, CheckOutlined, ClockCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task } from '../types'
+import { soundManager } from '../utils/soundManager'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -15,47 +16,6 @@ interface NotificationModalProps {
 
 const snoozeOptions = [5, 10, 30, 60]
 
-function playNotificationSound() {
-  try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext
-    if (!AudioContext) {
-      console.warn('浏览器不支持 Web Audio API')
-      return
-    }
-
-    const audioContext = new AudioContext()
-
-    const playTone = (frequency: number, startTime: number, duration: number, volume: number = 0.3) => {
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-
-      oscillator.frequency.value = frequency
-      oscillator.type = 'sine'
-
-      gainNode.gain.setValueAtTime(0, startTime)
-      gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.02)
-      gainNode.gain.linearRampToValueAtTime(0, startTime + duration)
-
-      oscillator.start(startTime)
-      oscillator.stop(startTime + duration)
-    }
-
-    const now = audioContext.currentTime
-    playTone(880, now, 0.15, 0.3)
-    playTone(880, now + 0.25, 0.15, 0.3)
-    playTone(1100, now + 0.5, 0.3, 0.4)
-
-    setTimeout(() => {
-      audioContext.close()
-    }, 2000)
-  } catch (err) {
-    console.error('播放声音失败:', err)
-  }
-}
-
 export const NotificationModal: React.FC<NotificationModalProps> = ({
   open,
   task,
@@ -63,13 +23,32 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   onSnooze
 }) => {
   const hasPlayedRef = useRef(false)
+  const [soundDisplay, setSoundDisplay] = React.useState('')
 
-  const playSound = useCallback(() => {
-    if (!hasPlayedRef.current) {
+  const playSound = useCallback(async () => {
+    if (!hasPlayedRef.current && task) {
       hasPlayedRef.current = true
-      playNotificationSound()
+      await soundManager.playTaskSound(task)
     }
-  }, [])
+  }, [task])
+
+  useEffect(() => {
+    const loadSoundDisplay = async () => {
+      if (task?.soundEnabled) {
+        if (!task.soundId) {
+          const defaultId = await soundManager.getDefaultSoundId()
+          const sound = await soundManager.getSoundById(defaultId)
+          setSoundDisplay(`默认 (${sound?.name || '轻柔'})`)
+        } else {
+          const sound = await soundManager.getSoundById(task.soundId)
+          setSoundDisplay(sound?.name || '未知铃声')
+        }
+      } else {
+        setSoundDisplay('')
+      }
+    }
+    loadSoundDisplay()
+  }, [task])
 
   useEffect(() => {
     if (open && task) {
@@ -97,8 +76,11 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     onClose()
   }
 
-  const handleTestSound = () => {
-    playNotificationSound()
+  const handleTestSound = async () => {
+    hasPlayedRef.current = false
+    if (task.soundEnabled) {
+      await soundManager.playTaskSound(task)
+    }
   }
 
   return (
@@ -136,13 +118,17 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
           {task.description || '时间到了，请处理该任务'}
         </Paragraph>
 
-        <Text type="secondary" style={{ display: 'block', marginBottom: 24 }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
           <ClockCircleOutlined style={{ marginRight: 4 }} />
           {dayjs().format('YYYY-MM-DD HH:mm')}
         </Text>
 
-        {task.soundEnabled && (
+        {task.soundEnabled && soundDisplay && (
           <div style={{ marginBottom: 16 }}>
+            <Tag color="gold" style={{ marginRight: 8 }}>
+              <SoundOutlined style={{ marginRight: 4 }} />
+              {soundDisplay}
+            </Tag>
             <Button
               size="small"
               icon={<SoundOutlined />}

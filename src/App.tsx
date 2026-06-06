@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task, TaskHistory } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
+import { soundManager } from './utils/soundManager'
 import { TaskForm } from './components/TaskForm'
 import { TaskList } from './components/TaskList'
 import { HistoryPanel } from './components/HistoryPanel'
+import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
 
 const { Header, Content } = Layout
@@ -90,8 +92,9 @@ const App: React.FC = () => {
     log('添加历史记录:', task.title, status)
   }, [saveHistory])
 
-  const triggerTestNotification = useCallback(() => {
+  const triggerTestNotification = useCallback(async () => {
     log('手动触发测试提醒')
+    const defaultSoundId = await soundManager.getDefaultSoundId()
     const testTask: Task = {
       id: 'test-' + Date.now(),
       title: '🔔 测试提醒',
@@ -100,7 +103,8 @@ const App: React.FC = () => {
       repeatType: 'none',
       enabled: true,
       createdAt: dayjs().toISOString(),
-      soundEnabled: true
+      soundEnabled: true,
+      soundId: defaultSoundId
     }
 
     setNotifyingTask(testTask)
@@ -109,7 +113,8 @@ const App: React.FC = () => {
     addHistoryRecord(testTask, 'completed')
   }, [addHistoryRecord])
 
-  const createTestTask = useCallback(() => {
+  const createTestTask = useCallback(async () => {
+    const defaultSoundId = await soundManager.getDefaultSoundId()
     const testTask: Task = {
       id: generateId(),
       title: '⏰ 测试任务（1分钟后）',
@@ -118,7 +123,8 @@ const App: React.FC = () => {
       repeatType: 'none',
       enabled: true,
       createdAt: dayjs().toISOString(),
-      soundEnabled: true
+      soundEnabled: true,
+      soundId: defaultSoundId
     }
     saveTasks([...tasks, testTask])
     message.success('测试任务已创建，将在1分钟后触发提醒')
@@ -343,6 +349,16 @@ const App: React.FC = () => {
         </Space>
       ),
       children: <HistoryPanel history={history} onClear={handleClearHistory} />
+    },
+    {
+      key: 'settings',
+      label: (
+        <Space>
+          <SettingOutlined />
+          设置
+        </Space>
+      ),
+      children: <SettingsPanel />
     }
   ]
 

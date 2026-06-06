@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { List, Switch, Button, Tag, Space, Tooltip, Typography } from 'antd'
-import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined } from '@ant-design/icons'
+import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task } from '../types'
+import type { Task, SoundOption } from '../types'
 import { getNextTriggerTime } from '../utils/scheduler'
+import { soundManager } from '../utils/soundManager'
 
 const { Text, Paragraph } = Typography
 
@@ -31,10 +32,32 @@ const repeatTypeColors: Record<string, string> = {
 }
 
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle }) => {
+  const [sounds, setSounds] = useState<SoundOption[]>([])
+  const [defaultSoundId, setDefaultSoundId] = useState<string>('')
+
+  useEffect(() => {
+    const loadSounds = async () => {
+      const [loadedSounds, loadedDefault] = await Promise.all([
+        soundManager.getAllSounds(),
+        soundManager.getDefaultSoundId()
+      ])
+      setSounds(loadedSounds)
+      setDefaultSoundId(loadedDefault)
+    }
+    loadSounds()
+  }, [])
+
   const getNextTimeText = (task: Task): string => {
     const nextTime = getNextTriggerTime(task)
     if (!nextTime) return '已过期'
     return nextTime.format('YYYY-MM-DD HH:mm')
+  }
+
+  const getSoundName = (task: Task): string => {
+    if (!task.soundEnabled) return ''
+    const soundId = task.soundId || defaultSoundId
+    const sound = sounds.find(s => s.id === soundId)
+    return sound?.name || '未知'
   }
 
   if (tasks.length === 0) {
@@ -116,7 +139,12 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                   <Tag color={repeatTypeColors[task.repeatType]}>
                     {repeatTypeLabels[task.repeatType]}
                   </Tag>
-                  {task.soundEnabled && <Tag color="gold">声音</Tag>}
+                  {task.soundEnabled && (
+                    <Tag color="gold">
+                      <SoundOutlined style={{ marginRight: 4 }} />
+                      {getSoundName(task)}
+                    </Tag>
+                  )}
                   {isExpired && <Tag color="red">已过期</Tag>}
                 </Space>
               }

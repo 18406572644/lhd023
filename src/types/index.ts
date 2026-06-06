@@ -1,5 +1,22 @@
 export type TaskRepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom'
 
+export type SoundType = 'gentle' | 'cheerful' | 'urgent' | 'classic' | 'chime' | 'custom'
+
+export interface SoundOption {
+  id: string
+  name: string
+  type: SoundType
+  description: string
+  isBuiltIn: boolean
+  data?: string
+  fileName?: string
+}
+
+export interface AppSettings {
+  defaultSoundId: string
+  sounds: SoundOption[]
+}
+
 export interface Task {
   id: string
   title: string
@@ -11,6 +28,7 @@ export interface Task {
   enabled: boolean
   createdAt: string
   soundEnabled: boolean
+  soundId?: string
 }
 
 export interface TaskHistory {
