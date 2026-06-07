@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Checkbox, Button, Dropdown, Space, Typography, Tag, Tooltip } from 'antd'
+import { createPortal } from 'react-dom'
+import { Checkbox, Button, Dropdown, Space, Typography, Tag, Tooltip, Menu } from 'antd'
 import {
   BellOutlined,
   ClockCircleOutlined,
@@ -35,6 +36,8 @@ export const Widget: React.FC = () => {
   const [contextMenuVisible, setContextMenuVisible] = useState(false)
   const [contextMenuPosition, setContextMenuPosition] = useState({ x: 0, y: 0 })
   const tasksRef = useRef<Task[]>([])
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+  const isRightClickingRef = useRef(false)
 
   useEffect(() => {
     tasksRef.current = tasks
@@ -167,43 +170,77 @@ export const Widget: React.FC = () => {
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
+    isRightClickingRef.current = true
     setContextMenuPosition({ x: e.clientX, y: e.clientY })
     setContextMenuVisible(true)
+    setTimeout(() => {
+      isRightClickingRef.current = false
+    }, 100)
   }
 
-  const handleChangeSize = async (size: WidgetSize) => {
+  const handleDocumentClick = useCallback((e: MouseEvent) => {
+    if (isRightClickingRef.current) return
+    if (contextMenuRef.current && contextMenuRef.current.contains(e.target as Node)) {
+      return
+    }
+    setContextMenuVisible(false)
+  }, [])
+
+  useEffect(() => {
+    if (contextMenuVisible) {
+      document.addEventListener('mousedown', handleDocumentClick)
+      document.addEventListener('contextmenu', handleDocumentClick)
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentClick)
+      document.removeEventListener('contextmenu', handleDocumentClick)
+    }
+  }, [contextMenuVisible, handleDocumentClick])
+
+  const handleChangeSize = useCallback(async (size: WidgetSize) => {
     try {
       setWidgetSize(size)
       if (isElectron() && window.api?.widget?.setSize) {
         await window.api.widget.setSize(size)
       }
-      setContextMenuVisible(false)
     } catch (err) {
       console.error('切换尺寸失败:', err)
     }
-  }
+  }, [])
 
-  const handleOpenMainWindow = async () => {
+  const handleOpenMainWindow = useCallback(async () => {
     try {
       if (isElectron() && window.api?.widget?.showMainWindow) {
         await window.api.widget.showMainWindow()
       }
-      setContextMenuVisible(false)
     } catch (err) {
       console.error('打开主窗口失败:', err)
     }
-  }
+  }, [])
 
-  const handleCloseWidget = async () => {
+  const handleCloseWidget = useCallback(async () => {
     try {
       if (isElectron() && window.api?.widget?.close) {
         await window.api.widget.close()
       }
-      setContextMenuVisible(false)
     } catch (err) {
       console.error('关闭小组件失败:', err)
     }
-  }
+  }, [])
+
+  const handleMenuClick = useCallback(({ key }: { key: string }) => {
+    setContextMenuVisible(false)
+    setTimeout(() => {
+      if (key === 'open') {
+        handleOpenMainWindow()
+      } else if (key === 'close') {
+        handleCloseWidget()
+      } else if (key === 'small' || key === 'medium' || key === 'large') {
+        handleChangeSize(key as WidgetSize)
+      }
+    }, 50)
+  }, [handleOpenMainWindow, handleCloseWidget, handleChangeSize])
 
   const getNextTimeText = (task: Task): string => {
     const nextTime = getNextTriggerTime(task)
@@ -215,32 +252,58 @@ export const Widget: React.FC = () => {
     return nextTime.format('MM-DD HH:mm')
   }
 
-  const contextMenuItems = [
-    {
-      key: 'size',
-      label: '切换大小',
-      icon: <ColumnWidthOutlined />,
-      children: [
-        { key: 'small', label: '小', icon: <SmallDashOutlined />, onClick: () => handleChangeSize('small') },
-        { key: 'medium', label: '中', icon: <BorderOutlined />, onClick: () => handleChangeSize('medium') },
-        { key: 'large', label: '大', icon: <AppstoreOutlined />, onClick: () => handleChangeSize('large') }
-      ]
-    },
-    { type: 'divider' as const },
-    {
-      key: 'open',
-      label: '打开主程序',
-      icon: <AppstoreOutlined />,
-      onClick: handleOpenMainWindow
-    },
-    {
-      key: 'close',
-      label: '关闭小组件',
-      icon: <CloseOutlined />,
-      danger: true,
-      onClick: handleCloseWidget
+  const renderContextMenu = () => {
+    if (!contextMenuVisible || typeof document === 'undefined') return null
+
+    const menuStyle: React.CSSProperties = {
+      position: 'fixed',
+      left: contextMenuPosition.x,
+      top: contextMenuPosition.y,
+      zIndex: 99999,
+      boxShadow: '0 6px 16px rgba(0, 0, 0, 0.12)',
+      borderRadius: 8,
+      minWidth: 160,
+      backgroundColor: '#fff'
     }
-  ]
+
+    const menuItems = [
+      {
+        key: 'size',
+        label: '切换大小',
+        icon: <ColumnWidthOutlined />,
+        children: [
+          { key: 'small', label: '小', icon: <SmallDashOutlined /> },
+          { key: 'medium', label: '中', icon: <BorderOutlined /> },
+          { key: 'large', label: '大', icon: <AppstoreOutlined /> }
+        ]
+      },
+      { type: 'divider' as const },
+      {
+        key: 'open',
+        label: '打开主程序',
+        icon: <AppstoreOutlined />
+      },
+      {
+        key: 'close',
+        label: '关闭小组件',
+        icon: <CloseOutlined />,
+        danger: true
+      }
+    ]
+
+    const menuContent = (
+      <div ref={contextMenuRef} style={menuStyle}>
+        <Menu
+          items={menuItems}
+          onClick={handleMenuClick}
+          mode="vertical"
+          selectable={false}
+        />
+      </div>
+    )
+
+    return createPortal(menuContent, document.body)
+  }
 
   return (
     <div
@@ -256,19 +319,7 @@ export const Widget: React.FC = () => {
       }}
       onContextMenu={handleContextMenu}
     >
-      <Dropdown
-        menu={{ items: contextMenuItems }}
-        open={contextMenuVisible}
-        onOpenChange={setContextMenuVisible}
-        trigger={['contextMenu']}
-        getPopupContainer={() => document.body}
-        align={{ offset: [contextMenuPosition.x, contextMenuPosition.y] }}
-      >
-        <div
-          className="context-menu-trigger"
-          style={{ display: 'none' }}
-        />
-      </Dropdown>
+      {renderContextMenu()}
 
       <div
         style={{
