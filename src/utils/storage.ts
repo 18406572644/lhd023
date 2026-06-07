@@ -167,6 +167,15 @@ declare global {
         unregisterAll: () => Promise<void>
         onTrigger: (callback: (hotkeyId: string) => void) => () => void
       }
+      file?: {
+        select: (options?: {
+          title?: string
+          multiple?: boolean
+          filters?: { name: string; extensions: string[] }[]
+        }) => Promise<{ name: string; path: string; size: number | null } | { name: string; path: string; size: number | null }[] | null>
+        open: (filePath: string) => Promise<boolean>
+        showInFolder: (filePath: string) => Promise<boolean>
+      }
     }
   }
 }
@@ -180,6 +189,9 @@ const migrateTask = (task: any): Task => {
     priority: 'medium',
     tag: 'other',
     duration: 30,
+    notes: '',
+    links: [],
+    attachments: [],
     ...task
   }
 }
@@ -439,7 +451,10 @@ export const storage = {
       soundId: template.soundId,
       priority: template.priority,
       tag: template.tag,
-      duration: template.duration
+      duration: template.duration,
+      notes: '',
+      links: [],
+      attachments: []
     }
   }
 }

@@ -33,3 +33,75 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+/* Rich Text Editor Styles */
+[contenteditable]:empty:before {
+  content: attr(data-placeholder);
+  color: #bfbfbf;
+  pointer-events: none;
+}
+
+[contenteditable] a {
+  color: #1677ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+[contenteditable] ul,
+[contenteditable] ol {
+  margin-left: 20px;
+  margin-bottom: 8px;
+}
+
+[contenteditable] li {
+  margin-bottom: 4px;
+}
+
+[contenteditable] p {
+  margin-bottom: 8px;
+}
+
+[contenteditable]:focus {
+  border-color: #1677ff !important;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
+}
+
+/* Task List Item Hover Effect */
+.task-list-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-color: #d9d9d9;
+}
+
+/* Drawer Content Padding */
+.ant-drawer-body {
+  padding-top: 0 !important;
+}
+
+/* Tab Content Adjustment */
+.ant-tabs-content-holder {
+  padding-top: 8px;
+}
+
+/* Modal Content Adjustment */
+.ant-modal-body {
+  padding-top: 0 !important;
+}
+
+/* Link in Rich Text Editor - readonly mode */
+.rich-text-readonly a {
+  color: #1677ff;
+  text-decoration: underline;
+}
+
+.rich-text-readonly a:hover {
+  color: #4096ff;
+}
+
+/* Attachment file type badge */
+.ant-tag.attachment-ext {
+  font-size: 10px;
+  padding: 0 4px;
+  line-height: 16px;
+  min-width: auto;
+  height: 16px;
+}

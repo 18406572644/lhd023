@@ -14,6 +14,7 @@ import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
 import { TemplateManager } from './components/TemplateManager'
+import { TaskDetailPanel } from './components/TaskDetailPanel'
 
 const { Header, Content } = Layout
 const { Title, Text } = Typography
@@ -38,6 +39,8 @@ const App: React.FC = () => {
   const [defaultTaskTime, setDefaultTaskTime] = useState<Dayjs | null>(null)
   const [hotkeys, setHotkeys] = useState<HotkeyConfig[]>([])
   const [templateTaskData, setTemplateTaskData] = useState<Omit<Task, 'id' | 'createdAt'> | null>(null)
+  const [detailPanelOpen, setDetailPanelOpen] = useState(false)
+  const [viewingTask, setViewingTask] = useState<Task | null>(null)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
@@ -148,7 +151,10 @@ const App: React.FC = () => {
       soundEnabled: true,
       soundId: defaultSoundId,
       priority: 'medium',
-      tag: 'other'
+      tag: 'other',
+      notes: '',
+      links: [],
+      attachments: []
     }
 
     setNotifyingTask(testTask)
@@ -170,7 +176,10 @@ const App: React.FC = () => {
       soundEnabled: true,
       soundId: defaultSoundId,
       priority: 'high',
-      tag: 'work'
+      tag: 'work',
+      notes: '',
+      links: [],
+      attachments: []
     }
     saveTasks([...tasks, testTask])
     message.success('测试任务已创建，将在1分钟后触发提醒')
@@ -398,6 +407,24 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const handleViewDetail = useCallback((task: Task) => {
+    setViewingTask(task)
+    setDetailPanelOpen(true)
+  }, [])
+
+  const handleCloseDetail = useCallback(() => {
+    setDetailPanelOpen(false)
+    setViewingTask(null)
+  }, [])
+
+  const handleUpdateTaskFromDetail = useCallback(async (updatedTask: Task) => {
+    const updatedTasks = tasks.map(t =>
+      t.id === updatedTask.id ? updatedTask : t
+    )
+    await saveTasks(updatedTasks)
+    setViewingTask(updatedTask)
+  }, [tasks, saveTasks])
+
   const enabledTasksCount = tasks.filter((t) => t.enabled && getNextTriggerTime(t)).length
 
   const calendarTasksCount = tasks.filter(t => t.enabled).length
@@ -427,6 +454,7 @@ const App: React.FC = () => {
           onEdit={handleEditTask}
           onDelete={handleDeleteTask}
           onToggle={handleToggleTask}
+          onViewDetail={handleViewDetail}
         />
       )
     },
@@ -620,6 +648,19 @@ const App: React.FC = () => {
         task={notifyingTask}
         onClose={handleNotificationClose}
         onSnooze={handleSnooze}
+      />
+
+      <TaskDetailPanel
+        open={detailPanelOpen}
+        task={viewingTask}
+        onClose={handleCloseDetail}
+        onEdit={(task) => {
+          handleCloseDetail()
+          handleEditTask(task)
+        }}
+        onDelete={handleDeleteTask}
+        onToggle={handleToggleTask}
+        onUpdate={handleUpdateTaskFromDetail}
       />
     </ConfigProvider>
   )

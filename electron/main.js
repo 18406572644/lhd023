@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, globalShortcut } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, globalShortcut, dialog, shell } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const Store = require('electron-store')
 
 let mainWindow = null
@@ -189,6 +190,60 @@ ipcMain.handle('hotkey:unregisterAll', () => {
     console.log('所有热键已注销')
   } catch (err) {
     console.error('注销所有热键错误:', err)
+  }
+})
+
+ipcMain.handle('file:select', async (_, options = {}) => {
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: options.title || '选择文件',
+      properties: ['openFile', ...(options.multiple ? ['multiSelections'] : [])],
+      filters: options.filters
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+    const filePaths = result.filePaths
+    const files = filePaths.map(filePath => {
+      try {
+        const stats = fs.statSync(filePath)
+        return {
+          name: path.basename(filePath),
+          path: filePath,
+          size: stats.size
+        }
+      } catch (err) {
+        return {
+          name: path.basename(filePath),
+          path: filePath,
+          size: null
+        }
+      }
+    })
+    return options.multiple ? files : files[0]
+  } catch (err) {
+    console.error('file:select error:', err)
+    return null
+  }
+})
+
+ipcMain.handle('file:open', (_, filePath) => {
+  try {
+    shell.openPath(filePath)
+    return true
+  } catch (err) {
+    console.error('file:open error:', err)
+    return false
+  }
+})
+
+ipcMain.handle('file:showInFolder', (_, filePath) => {
+  try {
+    shell.showItemInFolder(filePath)
+    return true
+  } catch (err) {
+    console.error('file:showInFolder error:', err)
+    return false
   }
 })
 

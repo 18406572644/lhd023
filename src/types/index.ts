@@ -43,10 +43,26 @@ export interface AppSettings {
   sounds: SoundOption[]
 }
 
+export interface TaskLink {
+  id: string
+  title: string
+  url: string
+  createdAt: string
+}
+
+export interface TaskAttachment {
+  id: string
+  name: string
+  path: string
+  size?: number
+  createdAt: string
+}
+
 export interface Task {
   id: string
   title: string
   description: string
+  notes: string
   targetTime: string
   repeatType: TaskRepeatType
   repeatInterval?: number
@@ -58,6 +74,8 @@ export interface Task {
   priority: TaskPriority
   tag: TaskTag
   duration?: number
+  links: TaskLink[]
+  attachments: TaskAttachment[]
 }
 
 export interface TaskHistory {

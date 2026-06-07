@@ -19,5 +19,10 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.removeListener('hotkey:triggered', handler)
       }
     }
+  },
+  file: {
+    select: (options) => ipcRenderer.invoke('file:select', options),
+    open: (filePath) => ipcRenderer.invoke('file:open', filePath),
+    showInFolder: (filePath) => ipcRenderer.invoke('file:showInFolder', filePath)
   }
 })

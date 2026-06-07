@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { List, Switch, Button, Tag, Space, Tooltip, Typography, Modal, Form, Input, Select, message } from 'antd'
-import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined, FileTextOutlined } from '@ant-design/icons'
+import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined, FileTextOutlined, LinkOutlined, PaperClipOutlined, EditTwoTone } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task, SoundOption, TemplateCategory } from '../types'
 import { getNextTriggerTime } from '../utils/scheduler'
@@ -15,6 +15,7 @@ interface TaskListProps {
   onEdit: (task: Task) => void
   onDelete: (id: string) => void
   onToggle: (id: string, enabled: boolean) => void
+  onViewDetail: (task: Task) => void
 }
 
 const repeatTypeLabels: Record<string, string> = {
@@ -33,7 +34,7 @@ const repeatTypeColors: Record<string, string> = {
   custom: 'purple'
 }
 
-export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle }) => {
+export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle, onViewDetail }) => {
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
@@ -122,6 +123,9 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
         renderItem={(task) => {
           const nextTime = getNextTriggerTime(task)
           const isExpired = !nextTime
+          const hasNotes = !!task.notes && task.notes.length > 0
+          const hasLinks = task.links && task.links.length > 0
+          const hasAttachments = task.attachments && task.attachments.length > 0
 
         return (
           <List.Item
@@ -132,13 +136,32 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
               borderRadius: 8,
               backgroundColor: '#fff',
               border: '1px solid #f0f0f0',
-              opacity: isExpired ? 0.6 : 1
+              opacity: isExpired ? 0.6 : 1,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            className="task-list-item"
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest('button, .ant-switch, .ant-tag')) {
+                onViewDetail(task)
+              }
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'
+              e.currentTarget.style.borderColor = '#d9d9d9'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.boxShadow = 'none'
+              e.currentTarget.style.borderColor = '#f0f0f0'
             }}
             actions={[
               <Tooltip title={task.enabled ? '禁用' : '启用'} key="toggle">
                 <Switch
                   checked={task.enabled}
-                  onChange={(checked) => onToggle(task.id, checked)}
+                  onChange={(checked, e) => {
+                    e.stopPropagation()
+                    onToggle(task.id, checked)
+                  }}
                   size="small"
                 />
               </Tooltip>,
@@ -146,7 +169,10 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                 <Button
                   type="text"
                   icon={<FileTextOutlined />}
-                  onClick={() => handleSaveAsTemplate(task)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleSaveAsTemplate(task)
+                  }}
                   size="small"
                 />
               </Tooltip>,
@@ -154,7 +180,10 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                 <Button
                   type="text"
                   icon={<EditOutlined />}
-                  onClick={() => onEdit(task)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEdit(task)
+                  }}
                   size="small"
                 />
               </Tooltip>,
@@ -163,7 +192,10 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                   type="text"
                   danger
                   icon={<DeleteOutlined />}
-                  onClick={() => onDelete(task.id)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(task.id)
+                  }}
                   size="small"
                 />
               </Tooltip>
@@ -180,10 +212,24 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: '#fff'
+                      color: '#fff',
+                      position: 'relative'
                     }}
                   >
                     <BellOutlined style={{ fontSize: 20 }} />
+                    {(hasNotes || hasLinks || hasAttachments) && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: -4,
+                          right: -4,
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          backgroundColor: '#1677ff'
+                        }}
+                      />
+                    )}
                   </div>
                 }
                 title={
@@ -211,6 +257,23 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                       </Tag>
                     )}
                     {isExpired && <Tag color="red">已过期</Tag>}
+                    <Space size={4} style={{ marginLeft: 8 }}>
+                      {hasNotes && (
+                        <Tooltip title="有备注">
+                          <EditTwoTone style={{ fontSize: 14 }} />
+                        </Tooltip>
+                      )}
+                      {hasLinks && (
+                        <Tooltip title={`${task.links.length} 个链接`}>
+                          <LinkOutlined style={{ fontSize: 14, color: '#1677ff' }} />
+                        </Tooltip>
+                      )}
+                      {hasAttachments && (
+                        <Tooltip title={`${task.attachments.length} 个附件`}>
+                          <PaperClipOutlined style={{ fontSize: 14, color: '#722ed1' }} />
+                        </Tooltip>
+                      )}
+                    </Space>
                   </Space>
                 }
               description={
@@ -231,6 +294,9 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                     </Text>
                     <Text type="secondary">
                       创建时间: {dayjs(task.createdAt).format('YYYY-MM-DD HH:mm')}
+                    </Text>
+                    <Text type="secondary" style={{ marginLeft: 'auto' }}>
+                      点击查看详情 →
                     </Text>
                   </Space>
                 </div>

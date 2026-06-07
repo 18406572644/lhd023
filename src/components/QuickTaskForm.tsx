@@ -127,7 +127,10 @@ export const QuickTaskForm: React.FC<QuickTaskFormProps> = ({ open, onCancel, on
         soundEnabled: true,
         priority: 'medium',
         tag: 'work',
-        duration: 30
+        duration: 30,
+        notes: '',
+        links: [],
+        attachments: []
       }
       onSubmit(taskData)
       form.resetFields()
