@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory, HotkeyConfig } from './types'
 import { storage } from './utils/storage'
@@ -15,6 +15,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
 import { TemplateManager } from './components/TemplateManager'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
+import { StatsPanel } from './components/StatsPanel'
 
 const { Header, Content } = Layout
 const { Title, Text } = Typography
@@ -544,6 +545,16 @@ const App: React.FC = () => {
         </Space>
       ),
       children: <HistoryPanel history={history} onClear={handleClearHistory} />
+    },
+    {
+      key: 'stats',
+      label: (
+        <Space>
+          <BarChartOutlined />
+          统计
+        </Space>
+      ),
+      children: <StatsPanel tasks={tasks} history={history} />
     },
     {
       key: 'templates',
