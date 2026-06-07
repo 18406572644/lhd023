@@ -6,6 +6,28 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 export type TaskTag = 'work' | 'personal' | 'family' | 'health' | 'study' | 'other'
 
+export type TemplateCategory = 'meeting' | 'report' | 'health' | 'study' | 'personal' | 'work' | 'other'
+
+export interface TaskTemplate {
+  id: string
+  name: string
+  description: string
+  category: TemplateCategory
+  taskTitle: string
+  taskDescription: string
+  targetTime: string
+  repeatType: TaskRepeatType
+  repeatInterval?: number
+  repeatDays?: number[]
+  soundEnabled: boolean
+  soundId?: string
+  priority: TaskPriority
+  tag: TaskTag
+  duration?: number
+  isBuiltIn: boolean
+  createdAt: string
+}
+
 export interface SoundOption {
   id: string
   name: string

@@ -1,10 +1,11 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage } = require('electron')
+const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, globalShortcut } = require('electron')
 const path = require('path')
 const Store = require('electron-store')
 
 let mainWindow = null
 let tray = null
 let store = null
+let registeredHotkeys = new Map()
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -143,6 +144,54 @@ ipcMain.handle('app:quit', () => {
   app.quit()
 })
 
+ipcMain.handle('hotkey:register', (_, accelerator, hotkeyId) => {
+  try {
+    if (registeredHotkeys.has(accelerator)) {
+      globalShortcut.unregister(accelerator)
+    }
+
+    const success = globalShortcut.register(accelerator, () => {
+      if (mainWindow) {
+        mainWindow.show()
+        mainWindow.focus()
+        mainWindow.webContents.send('hotkey:triggered', hotkeyId)
+      }
+    })
+
+    if (success) {
+      registeredHotkeys.set(accelerator, hotkeyId)
+      console.log(`热键注册成功: ${accelerator} -> ${hotkeyId}`)
+    } else {
+      console.log(`热键注册失败: ${accelerator}`)
+    }
+
+    return success
+  } catch (err) {
+    console.error('热键注册错误:', err)
+    return false
+  }
+})
+
+ipcMain.handle('hotkey:unregister', (_, accelerator) => {
+  try {
+    globalShortcut.unregister(accelerator)
+    registeredHotkeys.delete(accelerator)
+    console.log(`热键已注销: ${accelerator}`)
+  } catch (err) {
+    console.error('热键注销错误:', err)
+  }
+})
+
+ipcMain.handle('hotkey:unregisterAll', () => {
+  try {
+    globalShortcut.unregisterAll()
+    registeredHotkeys.clear()
+    console.log('所有热键已注销')
+  } catch (err) {
+    console.error('注销所有热键错误:', err)
+  }
+})
+
 app.whenReady().then(() => {
   try {
     store = new Store()
@@ -163,4 +212,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  registeredHotkeys.clear()
 })

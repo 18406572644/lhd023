@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory, HotkeyConfig } from './types'
 import { storage } from './utils/storage'
@@ -13,6 +13,7 @@ import { CalendarView } from './components/CalendarView'
 import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
+import { TemplateManager } from './components/TemplateManager'
 
 const { Header, Content } = Layout
 const { Title, Text } = Typography
@@ -36,6 +37,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('tasks')
   const [defaultTaskTime, setDefaultTaskTime] = useState<Dayjs | null>(null)
   const [hotkeys, setHotkeys] = useState<HotkeyConfig[]>([])
+  const [templateTaskData, setTemplateTaskData] = useState<Omit<Task, 'id' | 'createdAt'> | null>(null)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
@@ -380,6 +382,22 @@ const App: React.FC = () => {
     }
   }
 
+  const handleCreateTaskFromTemplate = useCallback(async (templateId: string) => {
+    try {
+      const taskData = await storage.createTaskFromTemplate(templateId)
+      if (taskData) {
+        setTemplateTaskData(taskData)
+        setEditingTask(null)
+        setDefaultTaskTime(null)
+        setFormOpen(true)
+        setActiveTab('tasks')
+      }
+    } catch (err) {
+      console.error('从模板创建任务失败:', err)
+      message.error('创建任务失败')
+    }
+  }, [])
+
   const enabledTasksCount = tasks.filter((t) => t.enabled && getNextTriggerTime(t)).length
 
   const calendarTasksCount = tasks.filter(t => t.enabled).length
@@ -445,6 +463,20 @@ const App: React.FC = () => {
         </Space>
       ),
       children: <HistoryPanel history={history} onClear={handleClearHistory} />
+    },
+    {
+      key: 'templates',
+      label: (
+        <Space>
+          <FileTextOutlined />
+          任务模板
+        </Space>
+      ),
+      children: (
+        <TemplateManager
+          onCreateTaskFromTemplate={handleCreateTaskFromTemplate}
+        />
+      )
     },
     {
       key: 'settings',
@@ -566,10 +598,13 @@ const App: React.FC = () => {
         open={formOpen}
         task={editingTask}
         defaultTime={defaultTaskTime}
+        templateData={templateTaskData}
+        onTemplateDataApplied={() => setTemplateTaskData(null)}
         onCancel={() => {
           setFormOpen(false)
           setEditingTask(null)
           setDefaultTaskTime(null)
+          setTemplateTaskData(null)
         }}
         onSubmit={handleFormSubmit}
       />

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip, Tag } from 'antd'
-import { PlayCircleOutlined, PauseCircleOutlined, SoundOutlined } from '@ant-design/icons'
+import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip, Tag, message, Typography } from 'antd'
+import { PlayCircleOutlined, PauseCircleOutlined, SoundOutlined, FileTextOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task, SoundOption, TaskPriority, TaskTag } from '../types'
+import type { Task, SoundOption, TaskPriority, TaskTag, TaskTemplate } from '../types'
 import { soundManager } from '../utils/soundManager'
-import { priorityColors, priorityLabels, tagColors, tagLabels } from '../utils/constants'
+import { storage } from '../utils/storage'
+import { priorityColors, priorityLabels, tagColors, tagLabels, categoryColors, categoryLabels } from '../utils/constants'
 
+const { Text } = Typography
 const { TextArea } = Input
 const { Option } = Select
 
@@ -13,8 +15,10 @@ interface TaskFormProps {
   open: boolean
   task: Task | null
   defaultTime?: dayjs.Dayjs | null
+  templateData?: Omit<Task, 'id' | 'createdAt'> | null
   onCancel: () => void
   onSubmit: (task: Omit<Task, 'id' | 'createdAt'>) => void
+  onTemplateDataApplied?: () => void
 }
 
 const weekDays = [
@@ -27,25 +31,48 @@ const weekDays = [
   { label: '周六', value: 6 }
 ]
 
-export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, onCancel, onSubmit }) => {
+export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, templateData, onCancel, onSubmit, onTemplateDataApplied }) => {
   const [form] = Form.useForm()
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<TaskTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
   const repeatType = Form.useWatch('repeatType', form)
   const soundEnabled = Form.useWatch('soundEnabled', form)
 
   useEffect(() => {
-    const loadSounds = async () => {
-      const [loadedSounds, loadedDefault] = await Promise.all([
+    const loadData = async () => {
+      const [loadedSounds, loadedDefault, loadedTemplates] = await Promise.all([
         soundManager.getAllSounds(),
-        soundManager.getDefaultSoundId()
+        soundManager.getDefaultSoundId(),
+        storage.getTemplates()
       ])
       setSounds(loadedSounds)
       setDefaultSoundId(loadedDefault)
+      setTemplates(loadedTemplates)
     }
-    loadSounds()
+    loadData()
   }, [])
+
+  const handleTemplateSelect = async (templateId: string) => {
+    if (!templateId) return
+    try {
+      const taskData = await storage.createTaskFromTemplate(templateId)
+      if (taskData) {
+        form.setFieldsValue({
+          ...taskData,
+          targetTime: dayjs(taskData.targetTime)
+        })
+        message.success('已应用模板配置')
+      }
+    } catch (err) {
+      console.error('应用模板失败:', err)
+      message.error('应用模板失败')
+    } finally {
+      setSelectedTemplateId('')
+    }
+  }
 
   useEffect(() => {
     if (open) {
@@ -67,6 +94,24 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, onC
           tag: task.tag,
           duration: task.duration
         })
+      } else if (templateData) {
+        form.setFieldsValue({
+          title: templateData.title,
+          description: templateData.description,
+          targetTime: dayjs(templateData.targetTime),
+          repeatType: templateData.repeatType,
+          repeatInterval: templateData.repeatInterval,
+          repeatDays: templateData.repeatDays,
+          enabled: templateData.enabled,
+          soundEnabled: templateData.soundEnabled,
+          soundId: templateData.soundId,
+          priority: templateData.priority,
+          tag: templateData.tag,
+          duration: templateData.duration
+        })
+        if (onTemplateDataApplied) {
+          onTemplateDataApplied()
+        }
       } else {
         form.resetFields()
         form.setFieldsValue({
@@ -84,7 +129,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, onC
         soundManager.stopSound()
       }
     }
-  }, [open, task, form])
+  }, [open, task, templateData, form, onTemplateDataApplied])
 
   const handleOk = () => {
     soundManager.stopSound()
@@ -132,6 +177,47 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, onC
       destroyOnClose
     >
       <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
+        {!task && (
+          <Form.Item
+            label={
+              <Space>
+                <FileTextOutlined />
+                从模板创建
+              </Space>
+            }
+            tooltip="选择一个模板快速填充任务配置"
+          >
+            <Select
+              value={selectedTemplateId}
+              onChange={(value) => {
+                setSelectedTemplateId(value)
+                handleTemplateSelect(value)
+              }}
+              placeholder="选择模板快速创建..."
+              allowClear
+              style={{ width: '100%' }}
+              optionLabelProp="label"
+            >
+              {templates.map((template) => (
+                <Option key={template.id} value={template.id} label={template.name}>
+                  <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+                    <Space>
+                      <Tag color={categoryColors[template.category]} style={{ margin: 0 }}>
+                        {categoryLabels[template.category]}
+                      </Tag>
+                      <span>{template.name}</span>
+                      {template.isBuiltIn && <Tag color="blue" style={{ margin: 0 }}>内置</Tag>}
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      {template.taskTitle}
+                    </Text>
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+        )}
+
         <Form.Item
           name="title"
           label="任务名称"

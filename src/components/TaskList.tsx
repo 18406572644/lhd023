@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { List, Switch, Button, Tag, Space, Tooltip, Typography } from 'antd'
-import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined } from '@ant-design/icons'
+import { List, Switch, Button, Tag, Space, Tooltip, Typography, Modal, Form, Input, Select, message } from 'antd'
+import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined, FileTextOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task, SoundOption } from '../types'
+import type { Task, SoundOption, TemplateCategory } from '../types'
 import { getNextTriggerTime } from '../utils/scheduler'
 import { soundManager } from '../utils/soundManager'
-import { priorityColors, priorityLabels, tagColors, tagLabels, getTaskColor } from '../utils/constants'
+import { storage } from '../utils/storage'
+import { priorityColors, priorityLabels, tagColors, tagLabels, getTaskColor, categoryColors, categoryLabels } from '../utils/constants'
 
 const { Text, Paragraph } = Typography
 
@@ -35,6 +36,9 @@ const repeatTypeColors: Record<string, string> = {
 export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle }) => {
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [templateForm] = Form.useForm()
 
   useEffect(() => {
     const loadSounds = async () => {
@@ -47,6 +51,47 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
     }
     loadSounds()
   }, [])
+
+  const handleSaveAsTemplate = (task: Task) => {
+    setSelectedTask(task)
+    templateForm.resetFields()
+    templateForm.setFieldsValue({
+      name: task.title,
+      description: task.description,
+      category: 'other'
+    })
+    setSaveTemplateModalOpen(true)
+  }
+
+  const handleSaveTemplateSubmit = async () => {
+    if (!selectedTask) return
+    try {
+      const values = await templateForm.validateFields()
+      const targetTime = dayjs(selectedTask.targetTime).format('HH:mm')
+      await storage.addTemplate({
+        name: values.name,
+        description: values.description || '',
+        category: values.category,
+        taskTitle: selectedTask.title,
+        taskDescription: selectedTask.description,
+        targetTime: targetTime,
+        repeatType: selectedTask.repeatType,
+        repeatInterval: selectedTask.repeatInterval,
+        repeatDays: selectedTask.repeatDays,
+        soundEnabled: selectedTask.soundEnabled,
+        soundId: selectedTask.soundId,
+        priority: selectedTask.priority,
+        tag: selectedTask.tag,
+        duration: selectedTask.duration
+      })
+      message.success('已保存为模板')
+      setSaveTemplateModalOpen(false)
+      setSelectedTask(null)
+    } catch (err) {
+      console.error('保存模板失败:', err)
+      message.error('保存模板失败')
+    }
+  }
 
   const getNextTimeText = (task: Task): string => {
     const nextTime = getNextTriggerTime(task)
@@ -71,11 +116,12 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
   }
 
   return (
-    <List
-      dataSource={tasks}
-      renderItem={(task) => {
-        const nextTime = getNextTriggerTime(task)
-        const isExpired = !nextTime
+    <>
+      <List
+        dataSource={tasks}
+        renderItem={(task) => {
+          const nextTime = getNextTriggerTime(task)
+          const isExpired = !nextTime
 
         return (
           <List.Item
@@ -93,6 +139,14 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                 <Switch
                   checked={task.enabled}
                   onChange={(checked) => onToggle(task.id, checked)}
+                  size="small"
+                />
+              </Tooltip>,
+              <Tooltip title="保存为模板" key="save-template">
+                <Button
+                  type="text"
+                  icon={<FileTextOutlined />}
+                  onClick={() => handleSaveAsTemplate(task)}
                   size="small"
                 />
               </Tooltip>,
@@ -186,5 +240,75 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
         )
       }}
     />
+
+    <Modal
+      title="保存为模板"
+      open={saveTemplateModalOpen}
+      onOk={handleSaveTemplateSubmit}
+      onCancel={() => {
+        setSaveTemplateModalOpen(false)
+        setSelectedTask(null)
+      }}
+      okText="保存"
+      cancelText="取消"
+      destroyOnClose
+    >
+      <Form form={templateForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form.Item
+          name="name"
+          label="模板名称"
+          rules={[{ required: true, message: '请输入模板名称' }]}
+        >
+          <Input placeholder="例如：每日晨会模板" maxLength={50} showCount />
+        </Form.Item>
+
+        <Form.Item name="description" label="模板描述">
+          <Input.TextArea placeholder="输入模板描述..." rows={2} maxLength={200} showCount />
+        </Form.Item>
+
+        <Form.Item
+          name="category"
+          label="模板分类"
+          rules={[{ required: true, message: '请选择模板分类' }]}
+        >
+          <Select>
+            {(Object.keys(categoryLabels) as TemplateCategory[]).map((category) => (
+              <Select.Option key={category} value={category}>
+                <Space>
+                  <Tag color={categoryColors[category]} style={{ margin: 0 }} />
+                  {categoryLabels[category]}
+                </Space>
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+
+        {selectedTask && (
+          <div style={{ padding: 12, backgroundColor: '#f5f7fa', borderRadius: 6 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>将保存以下任务配置：</Text>
+            <Space wrap style={{ marginTop: 8 }}>
+              <Tag color={priorityColors[selectedTask.priority]}>
+                {priorityLabels[selectedTask.priority]}
+              </Tag>
+              <Tag color={tagColors[selectedTask.tag]}>
+                {tagLabels[selectedTask.tag]}
+              </Tag>
+              <Tag color={repeatTypeColors[selectedTask.repeatType]}>
+                {repeatTypeLabels[selectedTask.repeatType]}
+              </Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                时间: {dayjs(selectedTask.targetTime).format('HH:mm')}
+              </Text>
+              {selectedTask.duration && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  时长: {selectedTask.duration}分钟
+                </Text>
+              )}
+            </Space>
+          </div>
+        )}
+      </Form>
+    </Modal>
+    </>
   )
 }
