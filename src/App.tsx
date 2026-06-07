@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import type { Task, TaskHistory } from './types'
+import type { Task, TaskHistory, HotkeyConfig } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
 import { soundManager } from './utils/soundManager'
 import { TaskForm } from './components/TaskForm'
+import { QuickTaskForm } from './components/QuickTaskForm'
 import { TaskList } from './components/TaskList'
 import { CalendarView } from './components/CalendarView'
 import { HistoryPanel } from './components/HistoryPanel'
@@ -28,15 +29,18 @@ const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([])
   const [history, setHistory] = useState<TaskHistory[]>([])
   const [formOpen, setFormOpen] = useState(false)
+  const [quickFormOpen, setQuickFormOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notifyingTask, setNotifyingTask] = useState<Task | null>(null)
   const [activeTab, setActiveTab] = useState('tasks')
   const [defaultTaskTime, setDefaultTaskTime] = useState<Dayjs | null>(null)
+  const [hotkeys, setHotkeys] = useState<HotkeyConfig[]>([])
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
   const historyRef = useRef<TaskHistory[]>([])
+  const hotkeyUnsubscribeRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     tasksRef.current = tasks
@@ -66,10 +70,44 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const initHotkeys = useCallback(async () => {
+    log('初始化全局热键...')
+    try {
+      const loadedHotkeys = await storage.getHotkeys()
+      setHotkeys(loadedHotkeys)
+      log('加载热键配置:', loadedHotkeys)
+
+      for (const hotkey of loadedHotkeys) {
+        if (hotkey.enabled) {
+          const success = await storage.registerHotkey(hotkey.accelerator, hotkey.id)
+          log(`注册热键 ${hotkey.accelerator}: ${success ? '成功' : '失败'}`)
+        }
+      }
+
+      if (window.api?.hotkeys?.onTrigger) {
+        hotkeyUnsubscribeRef.current = window.api.hotkeys.onTrigger((hotkeyId: string) => {
+          log(`热键触发: ${hotkeyId}`)
+          if (hotkeyId === 'quick-create-task') {
+            setQuickFormOpen(true)
+          }
+        })
+      }
+    } catch (err) {
+      console.error('初始化热键失败:', err)
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
     requestNotificationPermission()
-  }, [loadData, requestNotificationPermission])
+    initHotkeys()
+
+    return () => {
+      if (hotkeyUnsubscribeRef.current) {
+        hotkeyUnsubscribeRef.current()
+      }
+    }
+  }, [loadData, requestNotificationPermission, initHotkeys])
 
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     setTasks(newTasks)
@@ -293,6 +331,21 @@ const App: React.FC = () => {
     setEditingTask(null)
   }
 
+  const handleQuickFormSubmit = async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
+    const newTask: Task = {
+      id: generateId(),
+      createdAt: dayjs().toISOString(),
+      ...taskData
+    }
+    await saveTasks([...tasks, newTask])
+    message.success('任务已创建')
+    setQuickFormOpen(false)
+  }
+
+  const handleQuickAddTask = () => {
+    setQuickFormOpen(true)
+  }
+
   const handleSnooze = (minutes: number) => {
     if (notifyingTask) {
       const snoozedTask: Task = {
@@ -470,6 +523,15 @@ const App: React.FC = () => {
             >
               创建测试任务
             </Button>
+            <Tooltip title={`快速创建任务 (${hotkeys.find(h => h.id === 'quick-create-task')?.accelerator || 'Ctrl+Alt+N'})`}>
+              <Button
+                icon={<ThunderboltOutlined />}
+                onClick={handleQuickAddTask}
+                size="middle"
+              >
+                快速创建
+              </Button>
+            </Tooltip>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -510,6 +572,12 @@ const App: React.FC = () => {
           setDefaultTaskTime(null)
         }}
         onSubmit={handleFormSubmit}
+      />
+
+      <QuickTaskForm
+        open={quickFormOpen}
+        onCancel={() => setQuickFormOpen(false)}
+        onSubmit={handleQuickFormSubmit}
       />
 
       <NotificationModal

@@ -50,3 +50,18 @@ export interface AppState {
   tasks: Task[]
   history: TaskHistory[]
 }
+
+export interface HotkeyConfig {
+  id: string
+  name: string
+  description: string
+  defaultAccelerator: string
+  accelerator: string
+  enabled: boolean
+}
+
+export interface AppSettings {
+  defaultSoundId: string
+  sounds: SoundOption[]
+  hotkeys: HotkeyConfig[]
+}

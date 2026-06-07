@@ -1,4 +1,5 @@
 import type { SoundOption, SoundType, AppSettings } from '../types'
+import { DEFAULT_HOTKEYS } from './storage'
 
 const SETTINGS_KEY = 'task_reminder_settings'
 
@@ -325,7 +326,8 @@ const soundPlayer = new SoundPlayer()
 
 const getDefaultSettings = (): AppSettings => ({
   defaultSoundId: 'gentle',
-  sounds: [...builtInSounds]
+  sounds: [...builtInSounds],
+  hotkeys: [...DEFAULT_HOTKEYS]
 })
 
 export const soundManager = {

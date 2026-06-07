@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input } from 'antd'
-import { PlayCircleOutlined, PauseCircleOutlined, CheckOutlined, DeleteOutlined, UploadOutlined, SoundOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons'
-import type { SoundOption } from '../types'
+import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input, Tabs, Switch } from 'antd'
+import {
+  PlayCircleOutlined,
+  PauseCircleOutlined,
+  CheckOutlined,
+  DeleteOutlined,
+  UploadOutlined,
+  SoundOutlined,
+  EditOutlined,
+  SaveOutlined,
+  KeyOutlined,
+  ReloadOutlined,
+  StopOutlined
+} from '@ant-design/icons'
+import type { SoundOption, HotkeyConfig } from '../types'
 import { soundManager } from '../utils/soundManager'
+import { storage } from '../utils/storage'
 
 const { Text, Paragraph } = Typography
 
@@ -18,6 +31,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
   const [playingSoundId, setPlayingSoundId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [hotkeys, setHotkeys] = useState<HotkeyConfig[]>([])
+  const [recordingHotkeyId, setRecordingHotkeyId] = useState<string | null>(null)
+  const [tempAccelerator, setTempAccelerator] = useState('')
+  const recordingRef = useRef<boolean>(false)
+
   const loadSounds = async () => {
     const [loadedSounds, loadedDefault] = await Promise.all([
       soundManager.getAllSounds(),
@@ -27,14 +45,21 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
     setDefaultSoundId(loadedDefault)
   }
 
+  const loadHotkeys = async () => {
+    const loadedHotkeys = await storage.getHotkeys()
+    setHotkeys(loadedHotkeys)
+  }
+
   useEffect(() => {
     loadSounds()
+    loadHotkeys()
     const unsubscribe = soundManager.subscribeToPlayState((soundId, isPlaying) => {
       setPlayingSoundId(isPlaying ? soundId : null)
     })
     return () => {
       unsubscribe()
       soundManager.stopSound()
+      stopRecording()
     }
   }, [])
 
@@ -104,10 +129,150 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
     setEditingName('')
   }
 
+  const normalizeKey = (key: string): string => {
+    const keyMap: Record<string, string> = {
+      'Control': 'Ctrl',
+      ' ': 'Space',
+      'ArrowUp': 'Up',
+      'ArrowDown': 'Down',
+      'ArrowLeft': 'Left',
+      'ArrowRight': 'Right'
+    }
+    return keyMap[key] || key
+  }
+
+  const startRecording = (hotkeyId: string) => {
+    setRecordingHotkeyId(hotkeyId)
+    setTempAccelerator('')
+    recordingRef.current = true
+  }
+
+  const stopRecording = () => {
+    setRecordingHotkeyId(null)
+    setTempAccelerator('')
+    recordingRef.current = false
+  }
+
+  const handleHotkeyKeyDown = (e: React.KeyboardEvent, hotkey: HotkeyConfig) => {
+    if (recordingHotkeyId !== hotkey.id) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const keys: string[] = []
+
+    if (e.ctrlKey) keys.push('Ctrl')
+    if (e.altKey) keys.push('Alt')
+    if (e.shiftKey) keys.push('Shift')
+    if (e.metaKey) keys.push('Cmd')
+
+    const nonModifierKey = normalizeKey(e.key)
+    if (!['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      keys.push(nonModifierKey)
+    }
+
+    const accelerator = keys.join('+')
+    setTempAccelerator(accelerator)
+
+    if (keys.length >= 2 && !['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) {
+      setTimeout(() => {
+        saveHotkey(hotkey, accelerator)
+      }, 300)
+    }
+  }
+
+  const saveHotkey = async (hotkey: HotkeyConfig, newAccelerator: string) => {
+    if (!newAccelerator || newAccelerator.split('+').length < 2) {
+      message.warning('请至少选择一个修饰键（Ctrl/Alt/Shift）和一个其他键')
+      stopRecording()
+      return
+    }
+
+    const existingHotkey = hotkeys.find(h => h.accelerator === newAccelerator && h.id !== hotkey.id)
+    if (existingHotkey) {
+      message.warning(`快捷键 "${newAccelerator}" 已被 "${existingHotkey.name}" 使用`)
+      stopRecording()
+      return
+    }
+
+    try {
+      if (hotkey.accelerator !== newAccelerator) {
+        await storage.unregisterHotkey(hotkey.accelerator)
+      }
+
+      const success = await storage.registerHotkey(newAccelerator, hotkey.id)
+      if (!success) {
+        message.error('快捷键注册失败，请尝试其他组合')
+        stopRecording()
+        return
+      }
+
+      const updatedHotkeys = hotkeys.map(h =>
+        h.id === hotkey.id ? { ...h, accelerator: newAccelerator } : h
+      )
+      await storage.saveHotkeys(updatedHotkeys)
+      setHotkeys(updatedHotkeys)
+      message.success('快捷键已更新')
+    } catch (err) {
+      console.error('保存快捷键失败:', err)
+      message.error('保存失败，请重试')
+    }
+
+    stopRecording()
+  }
+
+  const handleResetHotkey = async (hotkey: HotkeyConfig) => {
+    try {
+      if (hotkey.accelerator !== hotkey.defaultAccelerator) {
+        await storage.unregisterHotkey(hotkey.accelerator)
+      }
+
+      const success = await storage.registerHotkey(hotkey.defaultAccelerator, hotkey.id)
+      if (!success) {
+        message.error('重置失败，请重试')
+        return
+      }
+
+      const updatedHotkeys = hotkeys.map(h =>
+        h.id === hotkey.id ? { ...h, accelerator: h.defaultAccelerator } : h
+      )
+      await storage.saveHotkeys(updatedHotkeys)
+      setHotkeys(updatedHotkeys)
+      message.success('已恢复默认快捷键')
+    } catch (err) {
+      console.error('重置快捷键失败:', err)
+      message.error('重置失败，请重试')
+    }
+  }
+
+  const handleToggleHotkey = async (hotkey: HotkeyConfig, enabled: boolean) => {
+    try {
+      if (enabled) {
+        const success = await storage.registerHotkey(hotkey.accelerator, hotkey.id)
+        if (!success) {
+          message.error('快捷键注册失败，请检查是否与其他程序冲突')
+          return
+        }
+      } else {
+        await storage.unregisterHotkey(hotkey.accelerator)
+      }
+
+      const updatedHotkeys = hotkeys.map(h =>
+        h.id === hotkey.id ? { ...h, enabled } : h
+      )
+      await storage.saveHotkeys(updatedHotkeys)
+      setHotkeys(updatedHotkeys)
+      message.success(enabled ? '快捷键已启用' : '快捷键已禁用')
+    } catch (err) {
+      console.error('切换快捷键状态失败:', err)
+      message.error('操作失败，请重试')
+    }
+  }
+
   const builtInSounds = sounds.filter(s => s.isBuiltIn)
   const customSounds = sounds.filter(s => !s.isBuiltIn)
 
-  return (
+  const soundTabContent = (
     <div style={{ padding: '16px 0' }}>
       <div style={{ marginBottom: 24 }}>
         <Space style={{ marginBottom: 16 }}>
@@ -332,5 +497,180 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
         </div>
       )}
     </div>
+  )
+
+  const hotkeyTabContent = (
+    <div style={{ padding: '16px 0' }}>
+      <div style={{ marginBottom: 16 }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          全局快捷键可在任何界面下快速执行对应操作。点击输入框后按下新的快捷键组合进行修改。
+        </Text>
+      </div>
+
+      <List
+        dataSource={hotkeys}
+        renderItem={(hotkey) => (
+          <List.Item
+            key={hotkey.id}
+            style={{
+              padding: '16px',
+              marginBottom: 8,
+              borderRadius: 8,
+              backgroundColor: hotkey.enabled ? '#fafafa' : '#f5f5f5',
+              border: '1px solid #f0f0f0'
+            }}
+            actions={[
+              <Switch
+                key="toggle"
+                checked={hotkey.enabled}
+                onChange={(checked) => handleToggleHotkey(hotkey, checked)}
+                size="small"
+              />
+            ]}
+          >
+            <List.Item.Meta
+              avatar={
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    backgroundColor: hotkey.enabled ? '#1677ff' : '#bfbfbf',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff'
+                  }}
+                >
+                  <KeyOutlined />
+                </div>
+              }
+              title={
+                <Space>
+                  <Text strong>{hotkey.name}</Text>
+                  {!hotkey.enabled && <Tag color="default">已禁用</Tag>}
+                </Space>
+              }
+              description={
+                <div>
+                  <Paragraph type="secondary" style={{ margin: '0 0 8px 0', fontSize: 12 }}>
+                    {hotkey.description}
+                  </Paragraph>
+                  <Space>
+                    {recordingHotkeyId === hotkey.id ? (
+                      <Input
+                        value={tempAccelerator || '按下快捷键组合...'}
+                        onKeyDown={(e) => handleHotkeyKeyDown(e, hotkey)}
+                        autoFocus
+                        size="small"
+                        style={{ width: 200, fontWeight: 'bold' }}
+                        suffix={
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<StopOutlined />}
+                            onClick={stopRecording}
+                            danger
+                          />
+                        }
+                      />
+                    ) : (
+                      <Tooltip title="点击修改快捷键">
+                        <Button
+                          size="small"
+                          onClick={() => hotkey.enabled && startRecording(hotkey.id)}
+                          disabled={!hotkey.enabled}
+                          style={{
+                            fontFamily: 'monospace',
+                            fontWeight: 'bold',
+                            minWidth: 140,
+                            justifyContent: 'center'
+                          }}
+                        >
+                          {hotkey.accelerator}
+                        </Button>
+                      </Tooltip>
+                    )}
+                    {recordingHotkeyId !== hotkey.id && (
+                      <>
+                        {hotkey.accelerator !== hotkey.defaultAccelerator && (
+                          <Tooltip title="恢复默认快捷键">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<ReloadOutlined />}
+                              onClick={() => handleResetHotkey(hotkey)}
+                              disabled={!hotkey.enabled}
+                            >
+                              重置
+                            </Button>
+                          </Tooltip>
+                        )}
+                        <Tooltip title="默认快捷键">
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            默认: {hotkey.defaultAccelerator}
+                          </Text>
+                        </Tooltip>
+                      </>
+                    )}
+                  </Space>
+                </div>
+              }
+            />
+          </List.Item>
+        )}
+      />
+
+      {recordingHotkeyId && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: 12,
+            backgroundColor: '#fff7e6',
+            border: '1px solid #ffd591',
+            borderRadius: 8,
+            textAlign: 'center'
+          }}
+        >
+          <Space>
+            <KeyOutlined style={{ color: '#fa8c16' }} />
+            <Text type="warning">
+              正在录制快捷键... 请按下新的快捷键组合（如 Ctrl+Alt+N），或点击取消按钮停止
+            </Text>
+          </Space>
+        </div>
+      )}
+    </div>
+  )
+
+  const tabItems = [
+    {
+      key: 'sounds',
+      label: (
+        <Space>
+          <SoundOutlined />
+          铃声设置
+        </Space>
+      ),
+      children: soundTabContent
+    },
+    {
+      key: 'hotkeys',
+      label: (
+        <Space>
+          <KeyOutlined />
+          快捷键设置
+        </Space>
+      ),
+      children: hotkeyTabContent
+    }
+  ]
+
+  return (
+    <Tabs
+      items={tabItems}
+      defaultActiveKey="sounds"
+      size="large"
+    />
   )
 }
