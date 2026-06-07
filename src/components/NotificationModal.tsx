@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useCallback } from 'react'
-import { Modal, Typography, Button, Space, Tag } from 'antd'
-import { BellOutlined, CheckOutlined, ClockCircleOutlined, SoundOutlined } from '@ant-design/icons'
+import React, { useEffect, useRef, useCallback, useState } from 'react'
+import { Modal, Typography, Button, Space, Tag, Tooltip } from 'antd'
+import { BellOutlined, CheckOutlined, ClockCircleOutlined, SoundOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task } from '../types'
 import { soundManager } from '../utils/soundManager'
@@ -23,7 +23,8 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   onSnooze
 }) => {
   const hasPlayedRef = useRef(false)
-  const [soundDisplay, setSoundDisplay] = React.useState('')
+  const [soundDisplay, setSoundDisplay] = useState('')
+  const [isSoundPlaying, setIsSoundPlaying] = useState(false)
 
   const playSound = useCallback(async () => {
     if (!hasPlayedRef.current && task) {
@@ -31,6 +32,15 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
       await soundManager.playTaskSound(task)
     }
   }, [task])
+
+  useEffect(() => {
+    const unsubscribe = soundManager.subscribeToPlayState((_, isPlaying) => {
+      setIsSoundPlaying(isPlaying)
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   useEffect(() => {
     const loadSoundDisplay = async () => {
@@ -61,6 +71,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
     }
     return () => {
       hasPlayedRef.current = false
+      soundManager.stopSound()
     }
   }, [open, task, playSound])
 
@@ -68,17 +79,21 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
 
   const handleSnooze = (minutes: number) => {
     hasPlayedRef.current = false
+    soundManager.stopSound()
     onSnooze(minutes)
   }
 
   const handleClose = () => {
     hasPlayedRef.current = false
+    soundManager.stopSound()
     onClose()
   }
 
-  const handleTestSound = async () => {
-    hasPlayedRef.current = false
-    if (task.soundEnabled) {
+  const handleToggleSound = async () => {
+    if (isSoundPlaying) {
+      soundManager.pauseSound()
+    } else {
+      hasPlayedRef.current = false
       await soundManager.playTaskSound(task)
     }
   }
@@ -129,14 +144,19 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
               <SoundOutlined style={{ marginRight: 4 }} />
               {soundDisplay}
             </Tag>
-            <Button
-              size="small"
-              icon={<SoundOutlined />}
-              onClick={handleTestSound}
-              type="text"
-            >
-              测试声音
-            </Button>
+            <Tooltip title={isSoundPlaying ? '暂停' : '播放'}>
+              <Button
+                size="small"
+                icon={isSoundPlaying ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                onClick={handleToggleSound}
+                type="text"
+                style={{
+                  color: isSoundPlaying ? '#1677ff' : undefined
+                }}
+              >
+                {isSoundPlaying ? '暂停' : '播放'}
+              </Button>
+            </Tooltip>
           </div>
         )}
 

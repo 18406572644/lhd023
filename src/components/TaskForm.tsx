@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip } from 'antd'
-import { PlayCircleOutlined, SoundOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, PauseCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task, SoundOption } from '../types'
 import { soundManager } from '../utils/soundManager'
@@ -29,6 +29,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
   const [form] = Form.useForm()
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null)
   const repeatType = Form.useWatch('repeatType', form)
   const soundEnabled = Form.useWatch('soundEnabled', form)
 
@@ -46,6 +47,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
 
   useEffect(() => {
     if (open) {
+      const unsubscribe = soundManager.subscribeToPlayState((soundId, isPlaying) => {
+        setPlayingSoundId(isPlaying ? soundId : null)
+      })
       if (task) {
         form.setFieldsValue({
           title: task.title,
@@ -67,10 +71,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
           targetTime: dayjs().add(1, 'hour')
         })
       }
+      return () => {
+        unsubscribe()
+        soundManager.stopSound()
+      }
     }
   }, [open, task, form])
 
   const handleOk = () => {
+    soundManager.stopSound()
     form.validateFields().then((values) => {
       const taskData: Omit<Task, 'id' | 'createdAt'> = {
         title: values.title,
@@ -88,10 +97,15 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
     })
   }
 
-  const handlePlaySound = (soundId: string) => {
+  const handleCancel = () => {
+    soundManager.stopSound()
+    onCancel()
+  }
+
+  const handleTogglePlaySound = (soundId: string) => {
     const sound = sounds.find(s => s.id === soundId)
     if (sound) {
-      soundManager.playSound(sound)
+      soundManager.toggleSound(sound)
     }
   }
 
@@ -99,7 +113,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
     <Modal
       title={task ? '编辑任务' : '新建任务'}
       open={open}
-      onCancel={onCancel}
+      onCancel={handleCancel}
       onOk={handleOk}
       okText="保存"
       cancelText="取消"
@@ -199,14 +213,17 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
               <Option value="" label={`默认 (${sounds.find(s => s.id === defaultSoundId)?.name || '轻柔'})`}>
                 <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                   <span>使用全局默认铃声</span>
-                  <Tooltip title="播放">
+                  <Tooltip title={playingSoundId === defaultSoundId ? '暂停' : '播放'}>
                     <Button
                       type="text"
                       size="small"
-                      icon={<PlayCircleOutlined />}
+                      icon={playingSoundId === defaultSoundId ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                      style={{
+                        color: playingSoundId === defaultSoundId ? '#1677ff' : undefined
+                      }}
                       onClick={(e) => {
                         e.stopPropagation()
-                        handlePlaySound(defaultSoundId)
+                        handleTogglePlaySound(defaultSoundId)
                       }}
                     />
                   </Tooltip>
@@ -221,14 +238,17 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
                         <span style={{ color: '#9254de', fontSize: 12 }}>自定义</span>
                       )}
                     </Space>
-                    <Tooltip title="播放">
+                    <Tooltip title={playingSoundId === sound.id ? '暂停' : '播放'}>
                       <Button
                         type="text"
                         size="small"
-                        icon={<PlayCircleOutlined />}
+                        icon={playingSoundId === sound.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                        style={{
+                          color: playingSoundId === sound.id ? '#1677ff' : undefined
+                        }}
                         onClick={(e) => {
                           e.stopPropagation()
-                          handlePlaySound(sound.id)
+                          handleTogglePlaySound(sound.id)
                         }}
                       />
                     </Tooltip>

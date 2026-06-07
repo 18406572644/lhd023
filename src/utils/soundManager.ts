@@ -40,12 +40,297 @@ export const builtInSounds: SoundOption[] = [
   }
 ]
 
+type PlayStateChangeListener = (soundId: string | null, isPlaying: boolean) => void
+
+class SoundPlayer {
+  private customAudio: HTMLAudioElement | null = null
+  private audioContext: AudioContext | null = null
+  private activeOscillators: { oscillator: OscillatorNode; gainNode: GainNode }[] = []
+  private currentSoundId: string | null = null
+  private currentSoundType: SoundType | null = null
+  private isPlayingFlag = false
+  private listeners: Set<PlayStateChangeListener> = new Set()
+
+  subscribe(listener: PlayStateChangeListener) {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private notifyListeners() {
+    this.listeners.forEach(listener => {
+      listener(this.currentSoundId, this.isPlayingFlag)
+    })
+  }
+
+  getCurrentSoundId(): string | null {
+    return this.currentSoundId
+  }
+
+  isPlaying(): boolean {
+    return this.isPlayingFlag
+  }
+
+  isPlayingSound(soundId: string): boolean {
+    return this.isPlayingFlag && this.currentSoundId === soundId
+  }
+
+  private async resumeAudioContext() {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      await this.audioContext.resume()
+    }
+  }
+
+  private stopAllBuiltInSounds() {
+    this.activeOscillators.forEach(({ oscillator, gainNode }) => {
+      try {
+        gainNode.gain.cancelScheduledValues(this.audioContext!.currentTime)
+        gainNode.gain.setValueAtTime(gainNode.gain.value, this.audioContext!.currentTime)
+        gainNode.gain.linearRampToValueAtTime(0, this.audioContext!.currentTime + 0.05)
+        oscillator.stop(this.audioContext!.currentTime + 0.05)
+      } catch {
+        try {
+          oscillator.stop()
+        } catch {
+          // ignore
+        }
+      }
+    })
+    this.activeOscillators = []
+  }
+
+  private stopCustomAudio() {
+    if (this.customAudio) {
+      this.customAudio.pause()
+      this.customAudio.currentTime = 0
+      this.customAudio.src = ''
+      this.customAudio = null
+    }
+  }
+
+  stopAll() {
+    if (this.currentSoundType === 'custom') {
+      this.stopCustomAudio()
+    } else if (this.currentSoundType) {
+      this.stopAllBuiltInSounds()
+      if (this.audioContext) {
+        this.audioContext.close().catch(() => {})
+        this.audioContext = null
+      }
+    }
+
+    const wasPlaying = this.isPlayingFlag
+    this.isPlayingFlag = false
+    this.currentSoundId = null
+    this.currentSoundType = null
+
+    if (wasPlaying) {
+      this.notifyListeners()
+    }
+  }
+
+  pause() {
+    if (!this.isPlayingFlag) return
+
+    if (this.currentSoundType === 'custom' && this.customAudio) {
+      this.customAudio.pause()
+    } else if (this.currentSoundType) {
+      this.stopAllBuiltInSounds()
+      if (this.audioContext) {
+        this.audioContext.suspend().catch(() => {})
+      }
+    }
+
+    this.isPlayingFlag = false
+    this.notifyListeners()
+  }
+
+  async play(soundOption: SoundOption): Promise<void> {
+    if (this.currentSoundId === soundOption.id && this.isPlayingFlag) {
+      return
+    }
+
+    this.stopAll()
+
+    this.currentSoundId = soundOption.id
+    this.currentSoundType = soundOption.type
+
+    try {
+      if (soundOption.data) {
+        await this.playCustomSound(soundOption.data, soundOption.id)
+      } else {
+        await this.playBuiltInSound(soundOption.type)
+      }
+    } catch {
+      this.stopAll()
+      try {
+        await this.playBuiltInSound('gentle')
+      } catch {
+        this.stopAll()
+      }
+    }
+  }
+
+  async toggle(soundOption: SoundOption): Promise<void> {
+    if (this.currentSoundId === soundOption.id && this.isPlayingFlag) {
+      this.pause()
+    } else {
+      await this.play(soundOption)
+    }
+  }
+
+  private async playCustomSound(dataUrl: string, soundId: string): Promise<void> {
+    const audio = new Audio(dataUrl)
+    audio.volume = 0.8
+    this.customAudio = audio
+
+    audio.onended = () => {
+      if (this.currentSoundId === soundId) {
+        this.isPlayingFlag = false
+        this.currentSoundId = null
+        this.currentSoundType = null
+        this.notifyListeners()
+      }
+    }
+
+    audio.onpause = () => {
+      if (this.currentSoundId === soundId && this.isPlayingFlag) {
+        this.isPlayingFlag = false
+        this.notifyListeners()
+      }
+    }
+
+    audio.onplay = () => {
+      if (this.currentSoundId === soundId) {
+        this.isPlayingFlag = true
+        this.notifyListeners()
+      }
+    }
+
+    audio.onerror = () => {
+      if (this.currentSoundId === soundId) {
+        this.stopAll()
+      }
+    }
+
+    try {
+      await audio.play()
+      this.isPlayingFlag = true
+      this.notifyListeners()
+    } catch (err) {
+      this.stopAll()
+      throw err
+    }
+  }
+
+  private async playBuiltInSound(type: SoundType): Promise<void> {
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext
+    if (!AudioContextCtor) {
+      throw new Error('AudioContext not supported')
+    }
+
+    this.audioContext = new AudioContextCtor()
+    await this.resumeAudioContext()
+
+    const playTone = (frequency: number, startTime: number, duration: number, volume: number = 0.3, oscillatorType: OscillatorType = 'sine') => {
+      if (!this.audioContext) return
+
+      const oscillator = this.audioContext.createOscillator()
+      const gainNode = this.audioContext.createGain()
+
+      oscillator.connect(gainNode)
+      gainNode.connect(this.audioContext.destination)
+
+      oscillator.frequency.value = frequency
+      oscillator.type = oscillatorType
+
+      const now = startTime
+      gainNode.gain.setValueAtTime(0, now)
+      gainNode.gain.linearRampToValueAtTime(volume, now + 0.02)
+      gainNode.gain.linearRampToValueAtTime(0, now + duration)
+
+      oscillator.start(now)
+      oscillator.stop(now + duration)
+
+      this.activeOscillators.push({ oscillator, gainNode })
+
+      oscillator.onended = () => {
+        const index = this.activeOscillators.findIndex(o => o.oscillator === oscillator)
+        if (index !== -1) {
+          this.activeOscillators.splice(index, 1)
+        }
+        if (this.activeOscillators.length === 0 && this.currentSoundType !== 'custom') {
+          if (this.audioContext) {
+            this.audioContext.close().catch(() => {})
+            this.audioContext = null
+          }
+          if (this.isPlayingFlag) {
+            this.isPlayingFlag = false
+            this.currentSoundId = null
+            this.currentSoundType = null
+            this.notifyListeners()
+          }
+        }
+      }
+    }
+
+    if (!this.audioContext) {
+      throw new Error('Failed to create AudioContext')
+    }
+
+    const now = this.audioContext.currentTime
+    this.isPlayingFlag = true
+    this.notifyListeners()
+
+    switch (type) {
+      case 'gentle':
+        playTone(523, now, 0.25, 0.2)
+        playTone(659, now + 0.3, 0.25, 0.2)
+        playTone(784, now + 0.6, 0.4, 0.2)
+        break
+      case 'cheerful':
+        playTone(523, now, 0.15, 0.25)
+        playTone(659, now + 0.15, 0.15, 0.25)
+        playTone(784, now + 0.3, 0.15, 0.25)
+        playTone(1047, now + 0.45, 0.3, 0.3)
+        break
+      case 'urgent':
+        playTone(880, now, 0.1, 0.35)
+        playTone(880, now + 0.15, 0.1, 0.35)
+        playTone(1100, now + 0.3, 0.1, 0.35)
+        playTone(880, now + 0.45, 0.1, 0.35)
+        playTone(880, now + 0.6, 0.1, 0.35)
+        playTone(1100, now + 0.75, 0.15, 0.4)
+        break
+      case 'classic':
+        playTone(880, now, 0.15, 0.3)
+        playTone(880, now + 0.25, 0.15, 0.3)
+        playTone(1100, now + 0.5, 0.3, 0.35)
+        break
+      case 'chime':
+        playTone(1319, now, 0.15, 0.2, 'triangle')
+        playTone(1568, now + 0.2, 0.15, 0.2, 'triangle')
+        playTone(2093, now + 0.4, 0.5, 0.25, 'triangle')
+        break
+      default:
+        playTone(880, now, 0.15, 0.3)
+        playTone(880, now + 0.25, 0.15, 0.3)
+        playTone(1100, now + 0.5, 0.3, 0.35)
+    }
+  }
+}
+
+const soundPlayer = new SoundPlayer()
+
 const getDefaultSettings = (): AppSettings => ({
   defaultSoundId: 'gentle',
   sounds: [...builtInSounds]
 })
 
 export const soundManager = {
+  player: soundPlayer,
+
   async getSettings(): Promise<AppSettings> {
     try {
       const stored = localStorage.getItem(SETTINGS_KEY)
@@ -130,6 +415,10 @@ export const soundManager = {
       return false
     }
 
+    if (soundPlayer.getCurrentSoundId() === soundId) {
+      soundPlayer.stopAll()
+    }
+
     settings.sounds.splice(soundIndex, 1)
     if (settings.defaultSoundId === soundId) {
       settings.defaultSoundId = 'gentle'
@@ -160,90 +449,31 @@ export const soundManager = {
   },
 
   playSound(soundOption: SoundOption): void {
-    try {
-      if (soundOption.data) {
-        const audio = new Audio(soundOption.data)
-        audio.volume = 0.8
-        audio.play().catch(() => {
-          this.playBuiltInSound(soundOption.type)
-        })
-        return
-      }
-      this.playBuiltInSound(soundOption.type)
-    } catch {
-      this.playBuiltInSound('gentle')
-    }
+    soundPlayer.play(soundOption).catch(() => {})
   },
 
-  playBuiltInSound(type: SoundType): void {
-    try {
-      const AudioContext = window.AudioContext || (window as any).webkitAudioContext
-      if (!AudioContext) return
+  toggleSound(soundOption: SoundOption): void {
+    soundPlayer.toggle(soundOption).catch(() => {})
+  },
 
-      const audioContext = new AudioContext()
+  pauseSound(): void {
+    soundPlayer.pause()
+  },
 
-      const playTone = (frequency: number, startTime: number, duration: number, volume: number = 0.3, type: OscillatorType = 'sine') => {
-        const oscillator = audioContext.createOscillator()
-        const gainNode = audioContext.createGain()
+  stopSound(): void {
+    soundPlayer.stopAll()
+  },
 
-        oscillator.connect(gainNode)
-        gainNode.connect(audioContext.destination)
+  isPlayingSound(soundId: string): boolean {
+    return soundPlayer.isPlayingSound(soundId)
+  },
 
-        oscillator.frequency.value = frequency
-        oscillator.type = type
+  getCurrentPlayingSoundId(): string | null {
+    return soundPlayer.getCurrentSoundId()
+  },
 
-        gainNode.gain.setValueAtTime(0, startTime)
-        gainNode.gain.linearRampToValueAtTime(volume, startTime + 0.02)
-        gainNode.gain.linearRampToValueAtTime(0, startTime + duration)
-
-        oscillator.start(startTime)
-        oscillator.stop(startTime + duration)
-      }
-
-      const now = audioContext.currentTime
-
-      switch (type) {
-        case 'gentle':
-          playTone(523, now, 0.25, 0.2)
-          playTone(659, now + 0.3, 0.25, 0.2)
-          playTone(784, now + 0.6, 0.4, 0.2)
-          break
-        case 'cheerful':
-          playTone(523, now, 0.15, 0.25)
-          playTone(659, now + 0.15, 0.15, 0.25)
-          playTone(784, now + 0.3, 0.15, 0.25)
-          playTone(1047, now + 0.45, 0.3, 0.3)
-          break
-        case 'urgent':
-          playTone(880, now, 0.1, 0.35)
-          playTone(880, now + 0.15, 0.1, 0.35)
-          playTone(1100, now + 0.3, 0.1, 0.35)
-          playTone(880, now + 0.45, 0.1, 0.35)
-          playTone(880, now + 0.6, 0.1, 0.35)
-          playTone(1100, now + 0.75, 0.15, 0.4)
-          break
-        case 'classic':
-          playTone(880, now, 0.15, 0.3)
-          playTone(880, now + 0.25, 0.15, 0.3)
-          playTone(1100, now + 0.5, 0.3, 0.35)
-          break
-        case 'chime':
-          playTone(1319, now, 0.15, 0.2, 'triangle')
-          playTone(1568, now + 0.2, 0.15, 0.2, 'triangle')
-          playTone(2093, now + 0.4, 0.5, 0.25, 'triangle')
-          break
-        default:
-          playTone(880, now, 0.15, 0.3)
-          playTone(880, now + 0.25, 0.15, 0.3)
-          playTone(1100, now + 0.5, 0.3, 0.35)
-      }
-
-      setTimeout(() => {
-        audioContext.close()
-      }, 2000)
-    } catch {
-      // ignore
-    }
+  subscribeToPlayState(listener: PlayStateChangeListener) {
+    return soundPlayer.subscribe(listener)
   },
 
   async playTaskSound(task: { soundId?: string; soundEnabled: boolean }): Promise<void> {
@@ -252,7 +482,7 @@ export const soundManager = {
     const soundId = task.soundId || await this.getDefaultSoundId()
     const sound = await this.getSoundById(soundId)
     if (sound) {
-      this.playSound(sound)
+      await soundPlayer.play(sound)
     }
   }
 }

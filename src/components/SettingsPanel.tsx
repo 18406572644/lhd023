@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input } from 'antd'
-import { PlayCircleOutlined, CheckOutlined, DeleteOutlined, UploadOutlined, SoundOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, PauseCircleOutlined, CheckOutlined, DeleteOutlined, UploadOutlined, SoundOutlined, EditOutlined, SaveOutlined } from '@ant-design/icons'
 import type { SoundOption } from '../types'
 import { soundManager } from '../utils/soundManager'
 
@@ -15,6 +15,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadSounds = async () => {
@@ -28,10 +29,17 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
 
   useEffect(() => {
     loadSounds()
+    const unsubscribe = soundManager.subscribeToPlayState((soundId, isPlaying) => {
+      setPlayingSoundId(isPlaying ? soundId : null)
+    })
+    return () => {
+      unsubscribe()
+      soundManager.stopSound()
+    }
   }, [])
 
-  const handlePlay = (sound: SoundOption) => {
-    soundManager.playSound(sound)
+  const handleTogglePlay = (sound: SoundOption) => {
+    soundManager.toggleSound(sound)
   }
 
   const handleSetDefault = async (soundId: string) => {
@@ -149,12 +157,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
                 border: defaultSoundId === sound.id ? '1px solid #1677ff' : '1px solid #f0f0f0'
               }}
               actions={[
-                <Tooltip title="播放" key="play">
+                <Tooltip title={playingSoundId === sound.id ? '暂停' : '播放'} key="play">
                   <Button
                     type="text"
-                    icon={<PlayCircleOutlined />}
-                    onClick={() => handlePlay(sound)}
+                    icon={playingSoundId === sound.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                    onClick={() => handleTogglePlay(sound)}
                     size="small"
+                    style={{
+                      color: playingSoundId === sound.id ? '#1677ff' : undefined
+                    }}
                   />
                 </Tooltip>,
                 defaultSoundId === sound.id ? (
@@ -211,12 +222,15 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
                   border: defaultSoundId === sound.id ? '1px solid #1677ff' : '1px solid #f0f0f0'
                 }}
                 actions={[
-                  <Tooltip title="播放" key="play">
+                  <Tooltip title={playingSoundId === sound.id ? '暂停' : '播放'} key="play">
                     <Button
                       type="text"
-                      icon={<PlayCircleOutlined />}
-                      onClick={() => handlePlay(sound)}
+                      icon={playingSoundId === sound.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+                      onClick={() => handleTogglePlay(sound)}
                       size="small"
+                      style={{
+                        color: playingSoundId === sound.id ? '#1677ff' : undefined
+                      }}
                     />
                   </Tooltip>,
                   editingId === sound.id ? (
