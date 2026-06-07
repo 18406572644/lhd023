@@ -1,4 +1,4 @@
-import type { Task, TaskHistory, HotkeyConfig, TaskTemplate } from '../types'
+import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize } from '../types'
 import { generateId } from './scheduler'
 
 const TASKS_KEY = 'task_reminder_tasks'
@@ -175,6 +175,20 @@ declare global {
         }) => Promise<{ name: string; path: string; size: number | null } | { name: string; path: string; size: number | null }[] | null>
         open: (filePath: string) => Promise<boolean>
         showInFolder: (filePath: string) => Promise<boolean>
+      }
+      widget?: {
+        getConfig: () => Promise<WidgetConfig>
+        saveConfig: (config: WidgetConfig) => Promise<boolean>
+        show: () => Promise<boolean>
+        hide: () => Promise<boolean>
+        toggle: () => Promise<boolean>
+        setSize: (size: WidgetSize) => Promise<boolean>
+        setOpacity: (opacity: number) => Promise<boolean>
+        setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<boolean>
+        showMainWindow: () => Promise<boolean>
+        close: () => Promise<boolean>
+        broadcastTaskUpdate: () => Promise<boolean>
+        onTaskUpdateRequested: (callback: () => void) => () => void
       }
     }
   }
@@ -455,6 +469,101 @@ export const storage = {
       notes: '',
       links: [],
       attachments: []
+    }
+  },
+
+  async getWidgetConfig(): Promise<WidgetConfig> {
+    const defaultConfig: WidgetConfig = {
+      enabled: false,
+      size: 'medium',
+      opacity: 0.9,
+      position: { x: 100, y: 100 },
+      alwaysOnTop: true
+    }
+    try {
+      if (isElectron() && window.api?.widget?.getConfig) {
+        return await window.api.widget.getConfig()
+      }
+      const localData = localStorage.getItem('widget_config')
+      return localData ? { ...defaultConfig, ...JSON.parse(localData) } : defaultConfig
+    } catch {
+      return defaultConfig
+    }
+  },
+
+  async saveWidgetConfig(config: WidgetConfig): Promise<void> {
+    try {
+      localStorage.setItem('widget_config', JSON.stringify(config))
+      if (isElectron() && window.api?.widget?.saveConfig) {
+        await window.api.widget.saveConfig(config)
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async showWidget(): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.widget?.show) {
+        return await window.api.widget.show()
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async hideWidget(): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.widget?.hide) {
+        return await window.api.widget.hide()
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async toggleWidget(): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.widget?.toggle) {
+        return await window.api.widget.toggle()
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async setWidgetSize(size: WidgetSize): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.widget?.setSize) {
+        return await window.api.widget.setSize(size)
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async setWidgetOpacity(opacity: number): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.widget?.setOpacity) {
+        return await window.api.widget.setOpacity(opacity)
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async broadcastTaskUpdate(): Promise<void> {
+    try {
+      if (isElectron() && window.api?.widget?.broadcastTaskUpdate) {
+        await window.api.widget.broadcastTaskUpdate()
+      }
+    } catch {
+      // ignore
     }
   }
 }

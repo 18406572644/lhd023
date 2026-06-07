@@ -100,8 +100,30 @@ export interface HotkeyConfig {
   enabled: boolean
 }
 
+export type WidgetSize = 'small' | 'medium' | 'large'
+
+export interface WidgetPosition {
+  x: number
+  y: number
+}
+
+export interface WidgetConfig {
+  enabled: boolean
+  size: WidgetSize
+  opacity: number
+  position: WidgetPosition
+  alwaysOnTop: boolean
+}
+
+export interface WidgetSizeConfig {
+  width: number
+  height: number
+  maxTasks: number
+}
+
 export interface AppSettings {
   defaultSoundId: string
   sounds: SoundOption[]
   hotkeys: HotkeyConfig[]
+  widget: WidgetConfig
 }

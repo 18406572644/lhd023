@@ -24,5 +24,25 @@ contextBridge.exposeInMainWorld('api', {
     select: (options) => ipcRenderer.invoke('file:select', options),
     open: (filePath) => ipcRenderer.invoke('file:open', filePath),
     showInFolder: (filePath) => ipcRenderer.invoke('file:showInFolder', filePath)
+  },
+  widget: {
+    getConfig: () => ipcRenderer.invoke('widget:getConfig'),
+    saveConfig: (config) => ipcRenderer.invoke('widget:saveConfig', config),
+    show: () => ipcRenderer.invoke('widget:show'),
+    hide: () => ipcRenderer.invoke('widget:hide'),
+    toggle: () => ipcRenderer.invoke('widget:toggle'),
+    setSize: (size) => ipcRenderer.invoke('widget:setSize', size),
+    setOpacity: (opacity) => ipcRenderer.invoke('widget:setOpacity', opacity),
+    setAlwaysOnTop: (alwaysOnTop) => ipcRenderer.invoke('widget:setAlwaysOnTop', alwaysOnTop),
+    showMainWindow: () => ipcRenderer.invoke('widget:showMainWindow'),
+    close: () => ipcRenderer.invoke('widget:close'),
+    broadcastTaskUpdate: () => ipcRenderer.invoke('widget:broadcastTaskUpdate'),
+    onTaskUpdateRequested: (callback) => {
+      const handler = () => callback()
+      ipcRenderer.on('widget:taskUpdateRequested', handler)
+      return () => {
+        ipcRenderer.removeListener('widget:taskUpdateRequested', handler)
+      }
+    }
   }
 })

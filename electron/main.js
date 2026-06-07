@@ -4,9 +4,24 @@ const fs = require('fs')
 const Store = require('electron-store')
 
 let mainWindow = null
+let widgetWindow = null
 let tray = null
 let store = null
 let registeredHotkeys = new Map()
+
+const WIDGET_SIZES = {
+  small: { width: 280, height: 320, maxTasks: 3 },
+  medium: { width: 340, height: 480, maxTasks: 6 },
+  large: { width: 400, height: 600, maxTasks: 10 }
+}
+
+const DEFAULT_WIDGET_CONFIG = {
+  enabled: false,
+  size: 'medium',
+  opacity: 0.9,
+  position: { x: 100, y: 100 },
+  alwaysOnTop: true
+}
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -56,6 +71,47 @@ function createTray() {
           }
         }
       },
+      {
+        label: '桌面小组件',
+        submenu: [
+          {
+            label: '显示/隐藏小组件',
+            click: () => {
+              const config = getWidgetConfig()
+              if (widgetWindow && widgetWindow.isVisible()) {
+                widgetWindow.hide()
+                saveWidgetConfig({ ...config, enabled: false })
+              } else {
+                createWidgetWindow()
+                saveWidgetConfig({ ...config, enabled: true })
+              }
+            }
+          },
+          { type: 'separator' },
+          {
+            label: '小尺寸',
+            type: 'radio',
+            click: () => {
+              ipcMain.emit('widget:setSize', {}, 'small')
+            }
+          },
+          {
+            label: '中尺寸',
+            type: 'radio',
+            checked: true,
+            click: () => {
+              ipcMain.emit('widget:setSize', {}, 'medium')
+            }
+          },
+          {
+            label: '大尺寸',
+            type: 'radio',
+            click: () => {
+              ipcMain.emit('widget:setSize', {}, 'large')
+            }
+          }
+        ]
+      },
       { type: 'separator' },
       {
         label: '退出',
@@ -80,6 +136,81 @@ function createTray() {
     })
   } catch (err) {
     console.error('创建托盘失败:', err)
+  }
+}
+
+function getWidgetConfig() {
+  if (!store) return DEFAULT_WIDGET_CONFIG
+  const saved = store.get('widget_config')
+  return { ...DEFAULT_WIDGET_CONFIG, ...saved }
+}
+
+function saveWidgetConfig(config) {
+  if (!store) return
+  store.set('widget_config', config)
+}
+
+function createWidgetWindow() {
+  if (widgetWindow) {
+    widgetWindow.show()
+    return
+  }
+
+  const config = getWidgetConfig()
+  const sizeConfig = WIDGET_SIZES[config.size] || WIDGET_SIZES.medium
+
+  widgetWindow = new BrowserWindow({
+    width: sizeConfig.width,
+    height: sizeConfig.height,
+    x: config.position.x,
+    y: config.position.y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: config.alwaysOnTop,
+    skipTaskbar: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  widgetWindow.setOpacity(config.opacity)
+
+  if (isDev) {
+    widgetWindow.loadURL('http://localhost:5173/widget.html')
+  } else {
+    widgetWindow.loadFile(path.join(__dirname, '../dist/widget.html'))
+  }
+
+  widgetWindow.on('moved', () => {
+    if (widgetWindow) {
+      const [x, y] = widgetWindow.getPosition()
+      const currentConfig = getWidgetConfig()
+      const newConfig = { ...currentConfig, position: { x, y } }
+      saveWidgetConfig(newConfig)
+    }
+  })
+
+  widgetWindow.on('closed', () => {
+    widgetWindow = null
+  })
+
+  widgetWindow.on('close', (e) => {
+    if (!app.isQuiting && !widgetWindow._forceClose) {
+      e.preventDefault()
+      widgetWindow.hide()
+    }
+  })
+}
+
+function destroyWidgetWindow() {
+  if (widgetWindow) {
+    widgetWindow._forceClose = true
+    widgetWindow.close()
+    widgetWindow = null
   }
 }
 
@@ -247,6 +378,112 @@ ipcMain.handle('file:showInFolder', (_, filePath) => {
   }
 })
 
+ipcMain.handle('widget:getConfig', () => {
+  return getWidgetConfig()
+})
+
+ipcMain.handle('widget:saveConfig', (_, config) => {
+  saveWidgetConfig(config)
+  return true
+})
+
+ipcMain.handle('widget:show', () => {
+  createWidgetWindow()
+  const config = getWidgetConfig()
+  saveWidgetConfig({ ...config, enabled: true })
+  return true
+})
+
+ipcMain.handle('widget:hide', () => {
+  if (widgetWindow) {
+    widgetWindow.hide()
+  }
+  const config = getWidgetConfig()
+  saveWidgetConfig({ ...config, enabled: false })
+  return true
+})
+
+ipcMain.handle('widget:toggle', () => {
+  const config = getWidgetConfig()
+  if (widgetWindow && widgetWindow.isVisible()) {
+    widgetWindow.hide()
+    saveWidgetConfig({ ...config, enabled: false })
+    return false
+  } else {
+    createWidgetWindow()
+    saveWidgetConfig({ ...config, enabled: true })
+    return true
+  }
+})
+
+ipcMain.handle('widget:setSize', (_, size) => {
+  const config = getWidgetConfig()
+  const newConfig = { ...config, size }
+  saveWidgetConfig(newConfig)
+
+  if (widgetWindow) {
+    const sizeConfig = WIDGET_SIZES[size] || WIDGET_SIZES.medium
+    widgetWindow.setSize(sizeConfig.width, sizeConfig.height)
+  }
+  return true
+})
+
+ipcMain.handle('widget:setOpacity', (_, opacity) => {
+  const config = getWidgetConfig()
+  const newConfig = { ...config, opacity }
+  saveWidgetConfig(newConfig)
+
+  if (widgetWindow) {
+    widgetWindow.setOpacity(opacity)
+  }
+  return true
+})
+
+ipcMain.handle('widget:setAlwaysOnTop', (_, alwaysOnTop) => {
+  const config = getWidgetConfig()
+  const newConfig = { ...config, alwaysOnTop }
+  saveWidgetConfig(newConfig)
+
+  if (widgetWindow) {
+    widgetWindow.setAlwaysOnTop(alwaysOnTop)
+  }
+  return true
+})
+
+ipcMain.handle('widget:startDrag', () => {
+  if (widgetWindow) {
+    widgetWindow.webContents.executeJavaScript('window.startWidgetDrag && window.startWidgetDrag()')
+  }
+  return true
+})
+
+ipcMain.handle('widget:showMainWindow', () => {
+  if (mainWindow) {
+    mainWindow.show()
+    mainWindow.focus()
+  }
+  return true
+})
+
+ipcMain.handle('widget:close', () => {
+  if (widgetWindow) {
+    widgetWindow.hide()
+    const config = getWidgetConfig()
+    saveWidgetConfig({ ...config, enabled: false })
+  }
+  return true
+})
+
+ipcMain.handle('widget:broadcastTaskUpdate', () => {
+  if (mainWindow) {
+    mainWindow.webContents.send('widget:taskUpdateRequested')
+  }
+  if (widgetWindow) {
+    widgetWindow.webContents.send('widget:taskUpdateRequested')
+  }
+  return true
+})
+
 app.whenReady().then(() => {
   try {
     store = new Store()
@@ -255,6 +492,13 @@ app.whenReady().then(() => {
   }
   createWindow()
   createTray()
+
+  const widgetConfig = getWidgetConfig()
+  if (widgetConfig.enabled) {
+    setTimeout(() => {
+      createWidgetWindow()
+    }, 1000)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -272,4 +516,5 @@ app.on('window-all-closed', () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
   registeredHotkeys.clear()
+  destroyWidgetWindow()
 })

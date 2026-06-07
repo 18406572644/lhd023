@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory, HotkeyConfig } from './types'
 import { storage } from './utils/storage'
@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [templateTaskData, setTemplateTaskData] = useState<Omit<Task, 'id' | 'createdAt'> | null>(null)
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
+  const [widgetEnabled, setWidgetEnabled] = useState(false)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
@@ -102,21 +103,52 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const initWidget = useCallback(async () => {
+    log('初始化小组件...')
+    try {
+      const widgetConfig = await storage.getWidgetConfig()
+      setWidgetEnabled(widgetConfig.enabled)
+      log('加载小组件配置:', widgetConfig)
+
+      if (window.api?.widget?.onTaskUpdateRequested) {
+        window.api.widget.onTaskUpdateRequested(() => {
+          log('收到小组件任务更新请求')
+          loadData()
+        })
+      }
+    } catch (err) {
+      console.error('初始化小组件失败:', err)
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
     requestNotificationPermission()
     initHotkeys()
+    initWidget()
 
     return () => {
       if (hotkeyUnsubscribeRef.current) {
         hotkeyUnsubscribeRef.current()
       }
     }
-  }, [loadData, requestNotificationPermission, initHotkeys])
+  }, [loadData, requestNotificationPermission, initHotkeys, initWidget])
 
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     setTasks(newTasks)
     await storage.saveTasks(newTasks)
+    await storage.broadcastTaskUpdate()
+  }, [])
+
+  const handleToggleWidget = useCallback(async () => {
+    try {
+      const result = await storage.toggleWidget()
+      setWidgetEnabled(result)
+      message.success(result ? '桌面小组件已开启' : '桌面小组件已关闭')
+    } catch (err) {
+      console.error('切换小组件失败:', err)
+      message.error('操作失败')
+    }
   }, [])
 
   const saveHistory = useCallback(async (newHistory: TaskHistory[]) => {
@@ -583,6 +615,16 @@ const App: React.FC = () => {
             >
               创建测试任务
             </Button>
+            <Tooltip title={widgetEnabled ? '关闭桌面小组件' : '开启桌面小组件'}>
+              <Button
+                icon={widgetEnabled ? <AppstoreOutlined /> : <AppstoreAddOutlined />}
+                onClick={handleToggleWidget}
+                size="middle"
+                type={widgetEnabled ? 'primary' : 'default'}
+              >
+                {widgetEnabled ? '小组件' : '小组件'}
+              </Button>
+            </Tooltip>
             <Tooltip title={`快速创建任务 (${hotkeys.find(h => h.id === 'quick-create-task')?.accelerator || 'Ctrl+Alt+N'})`}>
               <Button
                 icon={<ThunderboltOutlined />}

@@ -327,7 +327,14 @@ const soundPlayer = new SoundPlayer()
 const getDefaultSettings = (): AppSettings => ({
   defaultSoundId: 'gentle',
   sounds: [...builtInSounds],
-  hotkeys: [...DEFAULT_HOTKEYS]
+  hotkeys: [...DEFAULT_HOTKEYS],
+  widget: {
+    enabled: false,
+    size: 'medium',
+    opacity: 0.9,
+    position: { x: 100, y: 100 },
+    alwaysOnTop: true
+  }
 })
 
 export const soundManager = {
