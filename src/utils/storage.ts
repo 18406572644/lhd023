@@ -206,6 +206,7 @@ const migrateTask = (task: any): Task => {
     notes: '',
     links: [],
     attachments: [],
+    isPinned: false,
     ...task
   }
 }
@@ -468,7 +469,8 @@ export const storage = {
       duration: template.duration,
       notes: '',
       links: [],
-      attachments: []
+      attachments: [],
+      isPinned: false
     }
   },
 

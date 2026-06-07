@@ -45,6 +45,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
   const [links, setLinks] = useState<TaskLink[]>([])
   const [attachments, setAttachments] = useState<TaskAttachment[]>([])
   const [activeTab, setActiveTab] = useState('basic')
+  const [isPinned, setIsPinned] = useState(false)
+  const [pinnedAt, setPinnedAt] = useState<string | undefined>(undefined)
   const repeatType = Form.useWatch('repeatType', form)
   const soundEnabled = Form.useWatch('soundEnabled', form)
 
@@ -104,6 +106,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
         setNotes(task.notes || '')
         setLinks(task.links || [])
         setAttachments(task.attachments || [])
+        setIsPinned(task.isPinned || false)
+        setPinnedAt(task.pinnedAt)
       } else if (templateData) {
         form.setFieldsValue({
           title: templateData.title,
@@ -165,7 +169,9 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
         duration: values.duration,
         notes: notes,
         links: links,
-        attachments: attachments
+        attachments: attachments,
+        isPinned: task ? isPinned : false,
+        pinnedAt: task ? pinnedAt : undefined
       }
       onSubmit(taskData)
       form.resetFields()

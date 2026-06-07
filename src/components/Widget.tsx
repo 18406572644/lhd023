@@ -8,7 +8,8 @@ import {
   AppstoreOutlined,
   SmallDashOutlined,
   BorderOutlined,
-  ColumnWidthOutlined
+  ColumnWidthOutlined,
+  PushpinOutlined
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task, WidgetSize, WidgetSizeConfig } from '../types'
@@ -54,6 +55,16 @@ export const Widget: React.FC = () => {
           return nextTime.isSame(dayjs(), 'day') || nextTime.isBefore(dayjs().endOf('day'))
         })
         .sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1
+          if (!a.isPinned && b.isPinned) return 1
+          if (a.isPinned && b.isPinned) {
+            const aNext = getNextTriggerTime(a)
+            const bNext = getNextTriggerTime(b)
+            if (!aNext && !bNext) return 0
+            if (!aNext) return 1
+            if (!bNext) return -1
+            return aNext.valueOf() - bNext.valueOf()
+          }
           const aNext = getNextTriggerTime(a)
           const bNext = getNextTriggerTime(b)
           if (!aNext && !bNext) return 0
@@ -395,9 +406,9 @@ export const Widget: React.FC = () => {
                   className="task-item"
                   style={{
                     padding: widgetSize === 'small' ? '8px 10px' : '10px 12px',
-                    backgroundColor: isExpired ? '#fff2f0' : '#fff',
+                    backgroundColor: task.isPinned ? '#f0f7ff' : (isExpired ? '#fff2f0' : '#fff'),
                     borderRadius: 8,
-                    border: `1px solid ${isExpired ? '#ffccc7' : '#f0f0f0'}`,
+                    border: `1px solid ${task.isPinned ? '#91caff' : (isExpired ? '#ffccc7' : '#f0f0f0')}`,
                     opacity: isExpired ? 0.7 : 1,
                     transition: 'all 0.2s ease'
                   }}
@@ -410,6 +421,9 @@ export const Widget: React.FC = () => {
                     />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {task.isPinned && (
+                          <PushpinOutlined style={{ fontSize: 12, color: '#1677ff', transform: 'rotate(-45deg)' }} />
+                        )}
                         <Text
                           strong
                           style={{

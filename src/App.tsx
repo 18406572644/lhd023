@@ -186,7 +186,8 @@ const App: React.FC = () => {
       tag: 'other',
       notes: '',
       links: [],
-      attachments: []
+      attachments: [],
+      isPinned: false
     }
 
     setNotifyingTask(testTask)
@@ -211,7 +212,8 @@ const App: React.FC = () => {
       tag: 'work',
       notes: '',
       links: [],
-      attachments: []
+      attachments: [],
+      isPinned: false
     }
     saveTasks([...tasks, testTask])
     message.success('测试任务已创建，将在1分钟后触发提醒')
@@ -352,6 +354,14 @@ const App: React.FC = () => {
     await saveTasks(newTasks)
   }
 
+  const handlePinTask = async (id: string, isPinned: boolean) => {
+    const newTasks = tasks.map((t) =>
+      t.id === id ? { ...t, isPinned, pinnedAt: isPinned ? dayjs().toISOString() : undefined } : t
+    )
+    await saveTasks(newTasks)
+    message.success(isPinned ? '已置顶' : '已取消置顶')
+  }
+
   const handleFormSubmit = async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
     if (editingTask) {
       const updatedTasks = tasks.map((t) =>
@@ -476,6 +486,16 @@ const App: React.FC = () => {
       children: (
         <TaskList
           tasks={[...tasks].sort((a, b) => {
+            if (a.isPinned && !b.isPinned) return -1
+            if (!a.isPinned && b.isPinned) return 1
+            if (a.isPinned && b.isPinned) {
+              const aNext = getNextTriggerTime(a)
+              const bNext = getNextTriggerTime(b)
+              if (!aNext && !bNext) return 0
+              if (!aNext) return 1
+              if (!bNext) return -1
+              return aNext.valueOf() - bNext.valueOf()
+            }
             const aNext = getNextTriggerTime(a)
             const bNext = getNextTriggerTime(b)
             if (!aNext && !bNext) return 0
@@ -486,6 +506,7 @@ const App: React.FC = () => {
           onEdit={handleEditTask}
           onDelete={handleDeleteTask}
           onToggle={handleToggleTask}
+          onPin={handlePinTask}
           onViewDetail={handleViewDetail}
         />
       )

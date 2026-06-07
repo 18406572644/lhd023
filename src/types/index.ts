@@ -76,6 +76,8 @@ export interface Task {
   duration?: number
   links: TaskLink[]
   attachments: TaskAttachment[]
+  isPinned: boolean
+  pinnedAt?: string
 }
 
 export interface TaskHistory {

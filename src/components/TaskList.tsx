@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { List, Switch, Button, Tag, Space, Tooltip, Typography, Modal, Form, Input, Select, message } from 'antd'
-import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined, FileTextOutlined, LinkOutlined, PaperClipOutlined, EditTwoTone } from '@ant-design/icons'
+import { List, Switch, Button, Tag, Space, Tooltip, Typography, Modal, Form, Input, Select, message, Badge } from 'antd'
+import { EditOutlined, DeleteOutlined, BellOutlined, ClockCircleOutlined, SoundOutlined, FileTextOutlined, LinkOutlined, PaperClipOutlined, EditTwoTone, PushpinOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import type { Task, SoundOption, TemplateCategory } from '../types'
 import { getNextTriggerTime } from '../utils/scheduler'
@@ -15,6 +15,7 @@ interface TaskListProps {
   onEdit: (task: Task) => void
   onDelete: (id: string) => void
   onToggle: (id: string, enabled: boolean) => void
+  onPin: (id: string, isPinned: boolean) => void
   onViewDetail: (task: Task) => void
 }
 
@@ -34,7 +35,7 @@ const repeatTypeColors: Record<string, string> = {
   custom: 'purple'
 }
 
-export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle, onViewDetail }) => {
+export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onToggle, onPin, onViewDetail }) => {
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
   const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false)
@@ -134,11 +135,12 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
               padding: '16px 20px',
               marginBottom: 12,
               borderRadius: 8,
-              backgroundColor: '#fff',
-              border: '1px solid #f0f0f0',
+              backgroundColor: task.isPinned ? '#f0f7ff' : '#fff',
+              border: task.isPinned ? '1px solid #91caff' : '1px solid #f0f0f0',
               opacity: isExpired ? 0.6 : 1,
               cursor: 'pointer',
-              transition: 'all 0.2s ease'
+              transition: 'all 0.2s ease',
+              position: 'relative'
             }}
             className="task-list-item"
             onClick={(e) => {
@@ -155,6 +157,18 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
               e.currentTarget.style.borderColor = '#f0f0f0'
             }}
             actions={[
+              <Tooltip title={task.isPinned ? '取消置顶' : '置顶'} key="pin">
+                <Button
+                  type="text"
+                  icon={<PushpinOutlined />}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onPin(task.id, !task.isPinned)
+                  }}
+                  size="small"
+                  style={{ color: task.isPinned ? '#1677ff' : undefined }}
+                />
+              </Tooltip>,
               <Tooltip title={task.enabled ? '禁用' : '启用'} key="toggle">
                 <Switch
                   checked={task.enabled}
@@ -234,6 +248,11 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
                 }
                 title={
                   <Space wrap>
+                    {task.isPinned && (
+                      <Badge.Ribbon text="置顶" color="blue" style={{ marginRight: 8 }}>
+                        <span></span>
+                      </Badge.Ribbon>
+                    )}
                     <Text strong style={{ fontSize: 15 }}>
                       {task.title}
                     </Text>
