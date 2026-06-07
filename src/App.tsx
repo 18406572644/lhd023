@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip, Dropdown } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined, RobotOutlined, BookOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory, HotkeyConfig, PendingReminder } from './types'
 import { storage } from './utils/storage'
@@ -9,6 +9,8 @@ import { soundManager } from './utils/soundManager'
 import { reminderManager } from './utils/reminderManager'
 import { TaskForm } from './components/TaskForm'
 import { QuickTaskForm } from './components/QuickTaskForm'
+import { NaturalLanguageTaskForm } from './components/NaturalLanguageTaskForm'
+import { VocabManager } from './components/VocabManager'
 import { TaskList } from './components/TaskList'
 import { CalendarView } from './components/CalendarView'
 import { HistoryPanel } from './components/HistoryPanel'
@@ -47,6 +49,8 @@ const App: React.FC = () => {
   const [detailPanelOpen, setDetailPanelOpen] = useState(false)
   const [viewingTask, setViewingTask] = useState<Task | null>(null)
   const [widgetEnabled, setWidgetEnabled] = useState(false)
+  const [nlpFormOpen, setNlpFormOpen] = useState(false)
+  const [vocabManagerOpen, setVocabManagerOpen] = useState(false)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
@@ -415,8 +419,27 @@ const App: React.FC = () => {
     setQuickFormOpen(false)
   }
 
+  const handleNLPFormSubmit = async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
+    const newTask: Task = {
+      id: generateId(),
+      createdAt: dayjs().toISOString(),
+      ...taskData
+    }
+    await saveTasks([...tasks, newTask])
+    message.success('任务已创建')
+    setNlpFormOpen(false)
+  }
+
   const handleQuickAddTask = () => {
     setQuickFormOpen(true)
+  }
+
+  const handleNLPAddTask = () => {
+    setNlpFormOpen(true)
+  }
+
+  const handleVocabManagerOpen = () => {
+    setVocabManagerOpen(true)
   }
 
   const handleSnooze = (minutes: number) => {
@@ -708,6 +731,25 @@ const App: React.FC = () => {
                 快速创建
               </Button>
             </Tooltip>
+            <Tooltip title="自然语言创建">
+              <Button
+                icon={<RobotOutlined />}
+                onClick={handleNLPAddTask}
+                size="middle"
+                type="default"
+              >
+                智能创建
+              </Button>
+            </Tooltip>
+            <Tooltip title="词汇管理">
+              <Button
+                icon={<BookOutlined />}
+                onClick={handleVocabManagerOpen}
+                size="middle"
+              >
+                词汇
+              </Button>
+            </Tooltip>
             <Button
               type="primary"
               icon={<PlusOutlined />}
@@ -757,6 +799,21 @@ const App: React.FC = () => {
         open={quickFormOpen}
         onCancel={() => setQuickFormOpen(false)}
         onSubmit={handleQuickFormSubmit}
+      />
+
+      <NaturalLanguageTaskForm
+        open={nlpFormOpen}
+        onCancel={() => setNlpFormOpen(false)}
+        onSubmit={handleNLPFormSubmit}
+        onVocabManagerOpen={() => {
+          setNlpFormOpen(false)
+          setVocabManagerOpen(true)
+        }}
+      />
+
+      <VocabManager
+        open={vocabManagerOpen}
+        onCancel={() => setVocabManagerOpen(false)}
       />
 
       <NotificationModal

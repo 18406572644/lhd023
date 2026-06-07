@@ -162,6 +162,43 @@ export interface WidgetSizeConfig {
   maxTasks: number
 }
 
+export interface VocabMapping {
+  id: string
+  word: string
+  category: 'priority' | 'tag' | 'time' | 'title'
+  targetValue: string
+  createdAt: string
+  usageCount: number
+}
+
+export interface NLPLearningData {
+  vocabMappings: VocabMapping[]
+  wordFrequency: Record<string, number>
+  successfulParses: number
+  totalParses: number
+}
+
+export interface ParsedTaskField<T> {
+  value: T | null
+  isAmbiguous: boolean
+  rawText?: string
+  confidence: number
+}
+
+export interface NLPParseResult {
+  title: ParsedTaskField<string>
+  targetTime: ParsedTaskField<string>
+  repeatType: ParsedTaskField<TaskRepeatType>
+  repeatDays?: ParsedTaskField<number[]>
+  repeatInterval?: ParsedTaskField<number>
+  priority: ParsedTaskField<TaskPriority>
+  tag: ParsedTaskField<TaskTag>
+  soundEnabled: ParsedTaskField<boolean>
+  duration: ParsedTaskField<number>
+  rawInput: string
+  missingFields: string[]
+}
+
 export interface AppSettings {
   defaultSoundId: string
   sounds: SoundOption[]

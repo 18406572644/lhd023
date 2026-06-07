@@ -1,10 +1,13 @@
-import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize } from '../types'
+import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize, VocabMapping, NLPLearningData } from '../types'
 import { generateId } from './scheduler'
+import { updateWordFrequency } from './nlpParser'
 
 const TASKS_KEY = 'task_reminder_tasks'
 const HISTORY_KEY = 'task_reminder_history'
 const HOTKEYS_KEY = 'task_reminder_hotkeys'
 const TEMPLATES_KEY = 'task_reminder_templates'
+const VOCAB_KEY = 'task_reminder_vocab_mappings'
+const NLP_LEARNING_KEY = 'task_reminder_nlp_learning'
 
 export const DEFAULT_HOTKEYS: HotkeyConfig[] = [
   {
@@ -577,6 +580,125 @@ export const storage = {
     try {
       if (isElectron() && window.api?.widget?.broadcastTaskUpdate) {
         await window.api.widget.broadcastTaskUpdate()
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async getVocabMappings(): Promise<VocabMapping[]> {
+    try {
+      let mappings: VocabMapping[] = []
+      if (isElectron()) {
+        const data = await window.api!.store.get(VOCAB_KEY)
+        if (data) mappings = data
+      } else {
+        const localData = localStorage.getItem(VOCAB_KEY)
+        if (localData) mappings = JSON.parse(localData)
+      }
+      return mappings
+    } catch {
+      return []
+    }
+  },
+
+  async saveVocabMappings(mappings: VocabMapping[]): Promise<void> {
+    try {
+      localStorage.setItem(VOCAB_KEY, JSON.stringify(mappings))
+      if (isElectron()) {
+        await window.api!.store.set(VOCAB_KEY, mappings)
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async addVocabMapping(mapping: Omit<VocabMapping, 'id' | 'createdAt' | 'usageCount'>): Promise<VocabMapping> {
+    const mappings = await this.getVocabMappings()
+    const existingIndex = mappings.findIndex(m => m.word === mapping.word && m.category === mapping.category)
+    
+    if (existingIndex >= 0) {
+      const updated = { ...mappings[existingIndex], ...mapping, usageCount: mappings[existingIndex].usageCount + 1 }
+      mappings[existingIndex] = updated
+      await this.saveVocabMappings(mappings)
+      return updated
+    }
+
+    const newMapping: VocabMapping = {
+      ...mapping,
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+      usageCount: 1
+    }
+    await this.saveVocabMappings([...mappings, newMapping])
+    return newMapping
+  },
+
+  async updateVocabMapping(id: string, updates: Partial<VocabMapping>): Promise<void> {
+    const mappings = await this.getVocabMappings()
+    const updatedMappings = mappings.map(m =>
+      m.id === id ? { ...m, ...updates } : m
+    )
+    await this.saveVocabMappings(updatedMappings)
+  },
+
+  async deleteVocabMapping(id: string): Promise<void> {
+    const mappings = await this.getVocabMappings()
+    const filteredMappings = mappings.filter(m => m.id !== id)
+    await this.saveVocabMappings(filteredMappings)
+  },
+
+  async getNLPLearningData(): Promise<NLPLearningData> {
+    const defaultData: NLPLearningData = {
+      vocabMappings: [],
+      wordFrequency: {},
+      successfulParses: 0,
+      totalParses: 0
+    }
+    try {
+      if (isElectron()) {
+        const data = await window.api!.store.get(NLP_LEARNING_KEY)
+        if (data) return { ...defaultData, ...data }
+      }
+      const localData = localStorage.getItem(NLP_LEARNING_KEY)
+      return localData ? { ...defaultData, ...JSON.parse(localData) } : defaultData
+    } catch {
+      return defaultData
+    }
+  },
+
+  async saveNLPLearningData(data: NLPLearningData): Promise<void> {
+    try {
+      localStorage.setItem(NLP_LEARNING_KEY, JSON.stringify(data))
+      if (isElectron()) {
+        await window.api!.store.set(NLP_LEARNING_KEY, data)
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async recordNLPParse(input: string, success: boolean): Promise<void> {
+    try {
+      const data = await this.getNLPLearningData()
+      data.totalParses += 1
+      if (success) {
+        data.successfulParses += 1
+      }
+      data.wordFrequency = updateWordFrequency(input, data.wordFrequency)
+      await this.saveNLPLearningData(data)
+    } catch {
+      // ignore
+    }
+  },
+
+  async incrementVocabUsage(word: string, category: VocabMapping['category']): Promise<void> {
+    try {
+      const mappings = await this.getVocabMappings()
+      const mapping = mappings.find(m => m.word === word && m.category === category)
+      if (mapping) {
+        mapping.usageCount += 1
+        await this.saveVocabMappings(mappings)
       }
     } catch {
       // ignore
