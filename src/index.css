@@ -105,3 +105,323 @@ body {
   min-width: auto;
   height: 16px;
 }
+
+/* Calendar View Styles */
+.calendar-view-container {
+  min-height: 600px;
+}
+
+.calendar-event-item {
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-event-item:hover {
+  opacity: 0.8;
+  transform: translateX(2px);
+}
+
+.calendar-event-item.system-event {
+  background: linear-gradient(90deg, #13c2c2 0%, #36cfc9 100%);
+  color: white;
+}
+
+.calendar-event-item.task-event {
+  background: linear-gradient(90deg, #1677ff 0%, #4096ff 100%);
+  color: white;
+}
+
+.calendar-event-item.conflict {
+  box-shadow: 0 0 0 2px #ff4d4f;
+}
+
+.calendar-event-item.meeting {
+  border-left: 3px solid #fa8c16;
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.calendar-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.calendar-legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.calendar-legend-color.system {
+  background: linear-gradient(90deg, #13c2c2 0%, #36cfc9 100%);
+}
+
+.calendar-legend-color.task {
+  background: linear-gradient(90deg, #1677ff 0%, #4096ff 100%);
+}
+
+/* Calendar Cell Styles */
+.calendar-cell {
+  position: relative;
+  min-height: 100px;
+}
+
+.calendar-cell-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+}
+
+.calendar-cell-badge .ant-badge-count {
+  font-size: 10px;
+  height: 16px;
+  line-height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+}
+
+.calendar-cell-badge .system-badge .ant-badge-count {
+  background: #13c2c2;
+}
+
+.calendar-cell-badge .task-badge .ant-badge-count {
+  background: #1677ff;
+}
+
+/* Sync Button Animation */
+.sync-button-spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Conflict Alert */
+.conflict-alert {
+  border-left: 4px solid #ff4d4f;
+}
+
+.warning-alert {
+  border-left: 4px solid #faad14;
+}
+
+/* Meeting Link Button */
+.meeting-link-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.meeting-link-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Free Time Suggestion */
+.free-time-suggestion {
+  border-left: 3px solid #52c41a;
+  padding-left: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.free-time-suggestion:hover {
+  background: #f6ffed;
+  transform: translateX(4px);
+}
+
+.free-time-suggestion .match-score {
+  font-weight: bold;
+  color: #52c41a;
+}
+
+/* Calendar Event Modal */
+.calendar-event-modal .ant-modal-body {
+  padding: 24px !important;
+}
+
+.calendar-event-detail-item {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.calendar-event-detail-item:last-child {
+  border-bottom: none;
+}
+
+.calendar-event-detail-label {
+  min-width: 80px;
+  color: #8c8c8c;
+  font-weight: 500;
+}
+
+.calendar-event-detail-value {
+  flex: 1;
+  word-break: break-all;
+}
+
+/* Calendar Sync Settings */
+.calendar-sync-card {
+  transition: all 0.3s ease;
+}
+
+.calendar-sync-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.calendar-color-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px #d9d9d9;
+}
+
+/* Meeting Prep Reminder */
+.meeting-prep-reminder {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  padding: 16px;
+  color: white;
+}
+
+.meeting-prep-reminder .ant-btn-primary {
+  background: white;
+  color: #667eea;
+  border: none;
+  font-weight: 600;
+}
+
+.meeting-prep-reminder .ant-btn-primary:hover {
+  background: #f0f0f0;
+  color: #5a6fd8;
+}
+
+/* Calendar Account Status */
+.calendar-account-connected {
+  color: #52c41a;
+}
+
+.calendar-account-disconnected {
+  color: #ff4d4f;
+}
+
+/* Sync Status Indicator */
+.sync-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: #f0f5ff;
+  color: #1677ff;
+}
+
+.sync-status-indicator.syncing {
+  background: #fff7e6;
+  color: #fa8c16;
+}
+
+.sync-status-indicator.error {
+  background: #fff1f0;
+  color: #ff4d4f;
+}
+
+.sync-status-indicator.success {
+  background: #f6ffed;
+  color: #52c41a;
+}
+
+/* Task Form Calendar Section */
+.calendar-sync-section {
+  background: #fafafa;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.calendar-sync-section .ant-form-item {
+  margin-bottom: 12px;
+}
+
+/* Day View Event */
+.day-view-event {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 1;
+}
+
+.day-view-event:hover {
+  z-index: 10;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.day-view-event.system {
+  background: rgba(19, 194, 194, 0.9);
+  color: white;
+  border: 1px solid #13c2c2;
+}
+
+.day-view-event.task {
+  background: rgba(22, 119, 255, 0.9);
+  color: white;
+  border: 1px solid #1677ff;
+}
+
+/* Scrollbar for Calendar */
+.calendar-scroll-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.calendar-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.calendar-scroll-container::-webkit-scrollbar-thumb {
+  background: #d9d9d9;
+  border-radius: 3px;
+}
+
+.calendar-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #bfbfbf;
+}

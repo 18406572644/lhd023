@@ -58,5 +58,24 @@ contextBridge.exposeInMainWorld('api', {
   notificationBadge: {
     setBadge: (count) => ipcRenderer.invoke('badge:set', count),
     clearBadge: () => ipcRenderer.invoke('badge:clear')
+  },
+  calendar: {
+    getAccounts: () => ipcRenderer.invoke('calendar:getAccounts'),
+    saveAccounts: (accounts) => ipcRenderer.invoke('calendar:saveAccounts', accounts),
+    getCalendars: () => ipcRenderer.invoke('calendar:getCalendars'),
+    saveCalendars: (calendars) => ipcRenderer.invoke('calendar:saveCalendars', calendars),
+    getEvents: (startTime, endTime) => ipcRenderer.invoke('calendar:getEvents', startTime, endTime),
+    saveEvents: (events) => ipcRenderer.invoke('calendar:saveEvents', events),
+    getSyncConfig: () => ipcRenderer.invoke('calendar:getSyncConfig'),
+    saveSyncConfig: (config) => ipcRenderer.invoke('calendar:saveSyncConfig', config),
+    sync: () => ipcRenderer.invoke('calendar:sync'),
+    createEvent: (eventData) => ipcRenderer.invoke('calendar:createEvent', eventData),
+    updateEvent: (eventId, updates) => ipcRenderer.invoke('calendar:updateEvent', eventId, updates),
+    deleteEvent: (eventId) => ipcRenderer.invoke('calendar:deleteEvent', eventId),
+    getBusySlots: (startTime, endTime) => ipcRenderer.invoke('calendar:getBusySlots', startTime, endTime),
+    suggestFreeTime: (preferredDate, durationMinutes) => ipcRenderer.invoke('calendar:suggestFreeTime', preferredDate, durationMinutes),
+    checkConflicts: (taskStartTime, taskEndTime, taskId) => ipcRenderer.invoke('calendar:checkConflicts', taskStartTime, taskEndTime, taskId),
+    openMeetingUrl: (url) => ipcRenderer.invoke('calendar:openMeetingUrl', url),
+    findMeetingUrl: (text) => ipcRenderer.invoke('calendar:findMeetingUrl', text)
   }
 })

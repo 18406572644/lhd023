@@ -2,12 +2,470 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, Notification, nativeImage, glob
 const path = require('path')
 const fs = require('fs')
 const Store = require('electron-store')
+const dayjs = require('dayjs')
 
 let mainWindow = null
 let widgetWindow = null
 let tray = null
 let store = null
 let registeredHotkeys = new Map()
+
+const CALENDAR_ACCOUNTS_KEY = 'calendar_accounts'
+const CALENDARS_KEY = 'calendars'
+const CALENDAR_EVENTS_KEY = 'calendar_events'
+const CALENDAR_SYNC_CONFIG_KEY = 'calendar_sync_config'
+
+const DEFAULT_CALENDAR_SYNC_CONFIG = {
+  enabled: false,
+  autoSync: false,
+  syncInterval: 30,
+  syncAllDayEvents: true,
+  syncPastDays: 7,
+  syncFutureDays: 30,
+  defaultCalendarId: '',
+  calendarsToSync: [],
+  defaultReminderMinutes: 15,
+  conflictDetectionEnabled: true,
+  autoSuggestFreeTime: true,
+  meetingReminderEnabled: true,
+  meetingPrepMinutes: 10
+}
+
+const generateId = () => {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2)
+}
+
+const getMockCalendarAccounts = () => [
+  {
+    id: 'local-calendar-1',
+    name: '我的日历',
+    type: 'local',
+    email: '',
+    connected: true,
+    connectedAt: new Date().toISOString(),
+    color: '#1677ff'
+  },
+  {
+    id: 'outlook-calendar-1',
+    name: 'Outlook 日历',
+    type: 'outlook',
+    email: 'user@example.com',
+    connected: true,
+    connectedAt: new Date().toISOString(),
+    color: '#0078d4'
+  }
+]
+
+const getMockCalendars = () => [
+  {
+    id: 'calendar-work',
+    accountId: 'outlook-calendar-1',
+    name: '工作',
+    color: '#1677ff',
+    isDefault: true,
+    canWrite: true
+  },
+  {
+    id: 'calendar-personal',
+    accountId: 'outlook-calendar-1',
+    name: '个人',
+    color: '#722ed1',
+    isDefault: false,
+    canWrite: true
+  },
+  {
+    id: 'calendar-family',
+    accountId: 'local-calendar-1',
+    name: '家庭',
+    color: '#eb2f96',
+    isDefault: false,
+    canWrite: true
+  }
+]
+
+const getMockCalendarEvents = () => {
+  const now = dayjs()
+  return [
+    {
+      id: 'event-team-meeting',
+      calendarId: 'calendar-work',
+      title: '团队周会',
+      description: '讨论本周工作进度和下周计划',
+      location: '会议室A',
+      startTime: now.add(1, 'day').hour(10).minute(0).second(0).toISOString(),
+      endTime: now.add(1, 'day').hour(11).minute(30).second(0).toISOString(),
+      isAllDay: false,
+      status: 'busy',
+      isRecurring: true,
+      organizer: 'manager@example.com',
+      attendees: ['user@example.com', 'colleague@example.com'],
+      onlineMeetingUrl: 'https://teams.microsoft.com/l/meetup-join/...',
+      meetingProvider: 'teams',
+      source: 'system',
+      lastSyncedAt: new Date().toISOString()
+    },
+    {
+      id: 'event-daily-standup',
+      calendarId: 'calendar-work',
+      title: '每日晨会',
+      description: '快速同步工作进度',
+      location: '线上',
+      startTime: now.hour(9).minute(30).second(0).toISOString(),
+      endTime: now.hour(10).minute(0).second(0).toISOString(),
+      isAllDay: false,
+      status: 'busy',
+      isRecurring: true,
+      organizer: 'user@example.com',
+      attendees: ['team@example.com'],
+      onlineMeetingUrl: 'https://zoom.us/j/123456789',
+      meetingProvider: 'zoom',
+      source: 'system',
+      lastSyncedAt: new Date().toISOString()
+    },
+    {
+      id: 'event-lunch',
+      calendarId: 'calendar-personal',
+      title: '午餐时间',
+      startTime: now.hour(12).minute(0).second(0).toISOString(),
+      endTime: now.hour(13).minute(0).second(0).toISOString(),
+      isAllDay: false,
+      status: 'free',
+      isRecurring: true,
+      source: 'system',
+      lastSyncedAt: new Date().toISOString()
+    },
+    {
+      id: 'event-holiday',
+      calendarId: 'calendar-family',
+      title: '生日聚会',
+      description: '家人聚餐庆祝生日',
+      location: '家中',
+      startTime: now.add(5, 'day').hour(18).minute(0).second(0).toISOString(),
+      endTime: now.add(5, 'day').hour(21).minute(0).second(0).toISOString(),
+      isAllDay: false,
+      status: 'busy',
+      isRecurring: false,
+      source: 'local',
+      lastSyncedAt: new Date().toISOString()
+    },
+    {
+      id: 'event-public-holiday',
+      calendarId: 'calendar-work',
+      title: '国庆节',
+      startTime: now.add(10, 'day').hour(0).minute(0).second(0).toISOString(),
+      endTime: now.add(17, 'day').hour(23).minute(59).second(59).toISOString(),
+      isAllDay: true,
+      status: 'outOfOffice',
+      isRecurring: false,
+      source: 'system',
+      lastSyncedAt: new Date().toISOString()
+    }
+  ]
+}
+
+const getCalendarSyncConfig = () => {
+  if (!store) return DEFAULT_CALENDAR_SYNC_CONFIG
+  const saved = store.get(CALENDAR_SYNC_CONFIG_KEY)
+  return { ...DEFAULT_CALENDAR_SYNC_CONFIG, ...saved }
+}
+
+const saveCalendarSyncConfig = (config) => {
+  if (!store) return false
+  store.set(CALENDAR_SYNC_CONFIG_KEY, config)
+  return true
+}
+
+const getCalendarAccounts = () => {
+  if (!store) return getMockCalendarAccounts()
+  const saved = store.get(CALENDAR_ACCOUNTS_KEY)
+  return saved || getMockCalendarAccounts()
+}
+
+const saveCalendarAccounts = (accounts) => {
+  if (!store) return false
+  store.set(CALENDAR_ACCOUNTS_KEY, accounts)
+  return true
+}
+
+const getCalendars = () => {
+  if (!store) return getMockCalendars()
+  const saved = store.get(CALENDARS_KEY)
+  return saved || getMockCalendars()
+}
+
+const saveCalendars = (calendars) => {
+  if (!store) return false
+  store.set(CALENDARS_KEY, calendars)
+  return true
+}
+
+const getCalendarEvents = () => {
+  if (!store) return getMockCalendarEvents()
+  const saved = store.get(CALENDAR_EVENTS_KEY)
+  return saved || getMockCalendarEvents()
+}
+
+const saveCalendarEvents = (events) => {
+  if (!store) return false
+  store.set(CALENDAR_EVENTS_KEY, events)
+  return true
+}
+
+const detectVideoMeetingProvider = (url) => {
+  if (!url) return null
+  const lowerUrl = url.toLowerCase()
+  if (lowerUrl.includes('zoom.us') || lowerUrl.includes('zoom.com')) return 'zoom'
+  if (lowerUrl.includes('teams.microsoft.com') || lowerUrl.includes('microsoft.com')) return 'teams'
+  if (lowerUrl.includes('meet.google.com') || lowerUrl.includes('hangouts')) return 'meet'
+  if (lowerUrl.includes('webex.com')) return 'webex'
+  return 'other'
+}
+
+const findMeetingUrl = (text) => {
+  if (!text) return null
+  const urlRegex = /https?:\/\/[^\s]+/g
+  const urls = text.match(urlRegex) || []
+  for (const url of urls) {
+    const provider = detectVideoMeetingProvider(url)
+    if (provider) {
+      return { url, provider }
+    }
+  }
+  return null
+}
+
+const getBusySlots = (events, startDate, endDate) => {
+  const start = dayjs(startDate)
+  const end = dayjs(endDate)
+  
+  return events.filter(event => {
+    const eventStart = dayjs(event.startTime)
+    const eventEnd = dayjs(event.endTime)
+    const isBusy = event.status === 'busy' || event.status === 'outOfOffice'
+    const overlaps = eventStart.isBefore(end) && eventEnd.isAfter(start)
+    return isBusy && overlaps
+  })
+}
+
+const suggestFreeTime = (events, preferredDate, durationMinutes = 60) => {
+  const date = dayjs(preferredDate).startOf('day')
+  const workingStart = date.hour(9).minute(0)
+  const workingEnd = date.hour(18).minute(0)
+  
+  const busySlots = getBusySlots(events, workingStart.toISOString(), workingEnd.toISOString())
+    .sort((a, b) => dayjs(a.startTime).valueOf() - dayjs(b.startTime).valueOf())
+  
+  const suggestions = []
+  let currentTime = workingStart.clone()
+  
+  if (busySlots.length === 0) {
+    suggestions.push({
+      start: currentTime.toISOString(),
+      end: currentTime.add(durationMinutes, 'minute').toISOString(),
+      score: 100
+    })
+  }
+  
+  for (const busy of busySlots) {
+    const busyStart = dayjs(busy.startTime)
+    const busyEnd = dayjs(busy.endTime)
+    
+    if (currentTime.isBefore(busyStart)) {
+      const gap = busyStart.diff(currentTime, 'minute')
+      if (gap >= durationMinutes) {
+        suggestions.push({
+          start: currentTime.toISOString(),
+          end: currentTime.add(durationMinutes, 'minute').toISOString(),
+          score: currentTime.hour() >= 10 && currentTime.hour() <= 16 ? 90 : 70
+        })
+      }
+    }
+    
+    if (busyEnd.isAfter(currentTime)) {
+      currentTime = busyEnd.clone()
+    }
+  }
+  
+  if (currentTime.isBefore(workingEnd)) {
+    const gap = workingEnd.diff(currentTime, 'minute')
+    if (gap >= durationMinutes) {
+      suggestions.push({
+        start: currentTime.toISOString(),
+        end: currentTime.add(durationMinutes, 'minute').toISOString(),
+        score: 60
+      })
+    }
+  }
+  
+  return suggestions.sort((a, b) => b.score - a.score).slice(0, 3)
+}
+
+const syncCalendarEvents = async () => {
+  const config = getCalendarSyncConfig()
+  if (!config.enabled) {
+    return { success: false, message: '日历同步未启用' }
+  }
+  
+  try {
+    const accounts = getCalendarAccounts().filter(a => a.connected)
+    const calendars = getCalendars().filter(c => 
+      config.calendarsToSync.includes(c.id) || config.calendarsToSync.length === 0
+    )
+    
+    let events = getCalendarEvents()
+    const mockEvents = getMockCalendarEvents()
+    
+    const now = dayjs()
+    const syncStart = now.subtract(config.syncPastDays, 'day')
+    const syncEnd = now.add(config.syncFutureDays, 'day')
+    
+    const filteredMockEvents = mockEvents.filter(event => {
+      if (event.isAllDay && !config.syncAllDayEvents) return false
+      const eventStart = dayjs(event.startTime)
+      const eventEnd = dayjs(event.endTime)
+      return eventStart.isBefore(syncEnd) && eventEnd.isAfter(syncStart)
+    })
+    
+    for (const mockEvent of filteredMockEvents) {
+      const existingIndex = events.findIndex(e => e.id === mockEvent.id)
+      if (existingIndex >= 0) {
+        events[existingIndex] = { ...events[existingIndex], ...mockEvent, lastSyncedAt: new Date().toISOString() }
+      } else {
+        events.push({ ...mockEvent, lastSyncedAt: new Date().toISOString() })
+      }
+    }
+    
+    events = events.filter(event => {
+      const eventStart = dayjs(event.startTime)
+      return eventStart.isAfter(syncStart.subtract(1, 'day'))
+    })
+    
+    saveCalendarEvents(events)
+    
+    return {
+      success: true,
+      message: `同步成功，共 ${events.length} 个事件`,
+      eventsCount: events.length,
+      calendarsCount: calendars.length
+    }
+  } catch (err) {
+    console.error('日历同步失败:', err)
+    return { success: false, message: err.message }
+  }
+}
+
+const createCalendarEvent = async (eventData) => {
+  try {
+    const config = getCalendarSyncConfig()
+    const calendarId = eventData.calendarId || config.defaultCalendarId
+    
+    const meetingInfo = findMeetingUrl(eventData.description || '') || findMeetingUrl(eventData.location || '')
+    
+    const newEvent = {
+      id: 'event-' + generateId(),
+      calendarId: calendarId,
+      title: eventData.title,
+      description: eventData.description || '',
+      location: eventData.location || '',
+      startTime: eventData.startTime,
+      endTime: eventData.endTime,
+      isAllDay: eventData.isAllDay || false,
+      status: eventData.status || 'busy',
+      isRecurring: false,
+      onlineMeetingUrl: meetingInfo?.url,
+      meetingProvider: meetingInfo?.provider,
+      source: 'local',
+      lastSyncedAt: new Date().toISOString(),
+      etag: generateId()
+    }
+    
+    const events = getCalendarEvents()
+    events.push(newEvent)
+    saveCalendarEvents(events)
+    
+    return { success: true, event: newEvent }
+  } catch (err) {
+    console.error('创建日历事件失败:', err)
+    return { success: false, message: err.message }
+  }
+}
+
+const updateCalendarEvent = async (eventId, updates) => {
+  try {
+    const events = getCalendarEvents()
+    const eventIndex = events.findIndex(e => e.id === eventId)
+    
+    if (eventIndex < 0) {
+      return { success: false, message: '事件不存在' }
+    }
+    
+    const meetingInfo = findMeetingUrl(updates.description || '') || findMeetingUrl(updates.location || '')
+    
+    events[eventIndex] = {
+      ...events[eventIndex],
+      ...updates,
+      onlineMeetingUrl: meetingInfo?.url || events[eventIndex].onlineMeetingUrl,
+      meetingProvider: meetingInfo?.provider || events[eventIndex].meetingProvider,
+      lastSyncedAt: new Date().toISOString(),
+      syncDirty: true
+    }
+    
+    saveCalendarEvents(events)
+    
+    return { success: true, event: events[eventIndex] }
+  } catch (err) {
+    console.error('更新日历事件失败:', err)
+    return { success: false, message: err.message }
+  }
+}
+
+const deleteCalendarEvent = async (eventId) => {
+  try {
+    const events = getCalendarEvents()
+    const filteredEvents = events.filter(e => e.id !== eventId)
+    saveCalendarEvents(filteredEvents)
+    return { success: true }
+  } catch (err) {
+    console.error('删除日历事件失败:', err)
+    return { success: false, message: err.message }
+  }
+}
+
+const checkConflicts = (taskStartTime, taskEndTime, taskId = '') => {
+  const events = getCalendarEvents()
+  const taskStart = dayjs(taskStartTime)
+  const taskEnd = dayjs(taskEndTime)
+  
+  const conflicts = []
+  
+  for (const event of events) {
+    if (event.source === 'local' && event.id === taskId) continue
+    
+    const eventStart = dayjs(event.startTime)
+    const eventEnd = dayjs(event.endTime)
+    
+    const overlapStart = taskStart.isAfter(eventStart) ? taskStart : eventStart
+    const overlapEnd = taskEnd.isBefore(eventEnd) ? taskEnd : eventEnd
+    
+    if (overlapStart.isBefore(overlapEnd)) {
+      const overlapMinutes = overlapEnd.diff(overlapStart, 'minute')
+      const taskDuration = taskEnd.diff(taskStart, 'minute')
+      const overlapRatio = overlapMinutes / taskDuration
+      
+      conflicts.push({
+        taskId: taskId,
+        taskTitle: '',
+        eventId: event.id,
+        eventTitle: event.title,
+        overlappingStart: overlapStart.toISOString(),
+        overlappingEnd: overlapEnd.toISOString(),
+        severity: overlapRatio > 0.5 ? 'conflict' : 'warning'
+      })
+    }
+  }
+  
+  return conflicts
+}
 
 const WIDGET_SIZES = {
   small: { width: 280, height: 320, maxTasks: 3 },
@@ -575,6 +1033,155 @@ ipcMain.handle('badge:clear', () => {
     console.error('清除徽章失败:', err)
   }
   return true
+})
+
+ipcMain.handle('calendar:getAccounts', () => {
+  try {
+    return getCalendarAccounts()
+  } catch (err) {
+    console.error('获取日历账户失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:saveAccounts', (_, accounts) => {
+  try {
+    return saveCalendarAccounts(accounts)
+  } catch (err) {
+    console.error('保存日历账户失败:', err)
+    return false
+  }
+})
+
+ipcMain.handle('calendar:getCalendars', () => {
+  try {
+    return getCalendars()
+  } catch (err) {
+    console.error('获取日历列表失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:saveCalendars', (_, calendars) => {
+  try {
+    return saveCalendars(calendars)
+  } catch (err) {
+    console.error('保存日历列表失败:', err)
+    return false
+  }
+})
+
+ipcMain.handle('calendar:getEvents', (_, startTime, endTime) => {
+  try {
+    let events = getCalendarEvents()
+    if (startTime && endTime) {
+      const start = dayjs(startTime)
+      const end = dayjs(endTime)
+      events = events.filter(event => {
+        const eventStart = dayjs(event.startTime)
+        const eventEnd = dayjs(event.endTime)
+        return eventStart.isBefore(end) && eventEnd.isAfter(start)
+      })
+    }
+    return events
+  } catch (err) {
+    console.error('获取日历事件失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:saveEvents', (_, events) => {
+  try {
+    return saveCalendarEvents(events)
+  } catch (err) {
+    console.error('保存日历事件失败:', err)
+    return false
+  }
+})
+
+ipcMain.handle('calendar:getSyncConfig', () => {
+  try {
+    return getCalendarSyncConfig()
+  } catch (err) {
+    console.error('获取同步配置失败:', err)
+    return DEFAULT_CALENDAR_SYNC_CONFIG
+  }
+})
+
+ipcMain.handle('calendar:saveSyncConfig', (_, config) => {
+  try {
+    return saveCalendarSyncConfig(config)
+  } catch (err) {
+    console.error('保存同步配置失败:', err)
+    return false
+  }
+})
+
+ipcMain.handle('calendar:sync', async () => {
+  return await syncCalendarEvents()
+})
+
+ipcMain.handle('calendar:createEvent', async (_, eventData) => {
+  return await createCalendarEvent(eventData)
+})
+
+ipcMain.handle('calendar:updateEvent', async (_, eventId, updates) => {
+  return await updateCalendarEvent(eventId, updates)
+})
+
+ipcMain.handle('calendar:deleteEvent', async (_, eventId) => {
+  return await deleteCalendarEvent(eventId)
+})
+
+ipcMain.handle('calendar:getBusySlots', (_, startTime, endTime) => {
+  try {
+    const events = getCalendarEvents()
+    return getBusySlots(events, startTime, endTime)
+  } catch (err) {
+    console.error('获取忙碌时段失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:suggestFreeTime', (_, preferredDate, durationMinutes) => {
+  try {
+    const events = getCalendarEvents()
+    return suggestFreeTime(events, preferredDate, durationMinutes)
+  } catch (err) {
+    console.error('建议空闲时间失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:checkConflicts', (_, taskStartTime, taskEndTime, taskId) => {
+  try {
+    return checkConflicts(taskStartTime, taskEndTime, taskId)
+  } catch (err) {
+    console.error('检查冲突失败:', err)
+    return []
+  }
+})
+
+ipcMain.handle('calendar:openMeetingUrl', (_, url) => {
+  try {
+    if (url) {
+      shell.openExternal(url)
+      return true
+    }
+    return false
+  } catch (err) {
+    console.error('打开会议链接失败:', err)
+    return false
+  }
+})
+
+ipcMain.handle('calendar:findMeetingUrl', (_, text) => {
+  try {
+    return findMeetingUrl(text)
+  } catch (err) {
+    console.error('查找会议链接失败:', err)
+    return null
+  }
 })
 
 function createBadgeIcon(count) {

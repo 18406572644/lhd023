@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input, Tabs, Switch, Slider, Card, Row, Col } from 'antd'
+import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input, Tabs, Switch, Slider, Card, Row, Col, Select, Checkbox } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -14,12 +14,17 @@ import {
   StopOutlined,
   BellOutlined,
   ClockCircleOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
+  CalendarOutlined,
+  SyncOutlined,
+  WarningOutlined,
+  VideoCameraOutlined
 } from '@ant-design/icons'
-import type { SoundOption, HotkeyConfig, ReminderSettings, TaskPriority } from '../types'
+import type { SoundOption, HotkeyConfig, ReminderSettings, TaskPriority, CalendarAccount, Calendar, CalendarSyncConfig } from '../types'
 import { soundManager } from '../utils/soundManager'
 import { storage } from '../utils/storage'
 import { reminderManager } from '../utils/reminderManager'
+import { calendarManager } from '../utils/calendarManager'
 
 const { Text, Paragraph } = Typography
 
@@ -43,6 +48,26 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(reminderManager.getSettings())
   const reminderLevels = reminderManager.getAllReminderLevels()
 
+  const [calendarConfig, setCalendarConfig] = useState<CalendarSyncConfig>({
+    enabled: false,
+    autoSync: false,
+    syncInterval: 30,
+    syncAllDayEvents: true,
+    syncPastDays: 7,
+    syncFutureDays: 30,
+    defaultCalendarId: '',
+    calendarsToSync: [],
+    defaultReminderMinutes: 15,
+    conflictDetectionEnabled: true,
+    autoSuggestFreeTime: true,
+    meetingReminderEnabled: true,
+    meetingPrepMinutes: 10
+  })
+  const [calendarAccounts, setCalendarAccounts] = useState<CalendarAccount[]>([])
+  const [calendars, setCalendars] = useState<Calendar[]>([])
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null)
+
   const loadSounds = async () => {
     const [loadedSounds, loadedDefault] = await Promise.all([
       soundManager.getAllSounds(),
@@ -57,9 +82,22 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
     setHotkeys(loadedHotkeys)
   }
 
+  const loadCalendarConfig = async () => {
+    const [config, accounts, calendarList] = await Promise.all([
+      storage.getCalendarSyncConfig(),
+      storage.getCalendarAccounts(),
+      storage.getCalendars()
+    ])
+    setCalendarConfig(config)
+    setCalendarAccounts(accounts)
+    setCalendars(calendarList)
+    setLastSyncTime(calendarManager.getLastSyncAt())
+  }
+
   useEffect(() => {
     loadSounds()
     loadHotkeys()
+    loadCalendarConfig()
     const unsubscribe = soundManager.subscribeToPlayState((soundId, isPlaying) => {
       setPlayingSoundId(isPlaying ? soundId : null)
     })
@@ -307,6 +345,446 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
     medium: '#1677ff',
     low: '#52c41a'
   }
+
+  const handleCalendarConfigChange = async (key: keyof CalendarSyncConfig, value: any) => {
+    const newConfig = { ...calendarConfig, [key]: value }
+    setCalendarConfig(newConfig)
+    await calendarManager.updateSyncConfig(newConfig)
+    message.success('设置已保存')
+  }
+
+  const handleCalendarSync = async () => {
+    if (isSyncing) return
+    setIsSyncing(true)
+    try {
+      const result = await calendarManager.sync()
+      if (result.success) {
+        message.success(`同步成功，共 ${result.eventsCount || 0} 个事件`)
+        setLastSyncTime(new Date().toISOString())
+        loadCalendarConfig()
+      } else {
+        message.error(result.message || '同步失败')
+      }
+    } catch (err) {
+      message.error('同步失败，请重试')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  const formatSyncTime = (time: string | null) => {
+    if (!time) return '从未同步'
+    const date = new Date(time)
+    return date.toLocaleString('zh-CN')
+  }
+
+  const calendarTabContent = (
+    <div style={{ padding: '16px 0' }}>
+      <Card
+        title={
+          <Space>
+            <CalendarOutlined />
+            日历同步设置
+          </Space>
+        }
+        style={{ marginBottom: 24 }}
+        size="small"
+      >
+        <Row gutter={24}>
+          <Col span={12}>
+            <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                  启用日历同步
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  开启后可同步日历事件到任务列表
+                </Text>
+              </div>
+              <Switch
+                checked={calendarConfig.enabled}
+                onChange={(checked) => handleCalendarConfigChange('enabled', checked)}
+              />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                  自动同步
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  按照设定的间隔自动同步日历
+                </Text>
+              </div>
+              <Switch
+                checked={calendarConfig.autoSync}
+                onChange={(checked) => handleCalendarConfigChange('autoSync', checked)}
+                disabled={!calendarConfig.enabled}
+              />
+            </div>
+          </Col>
+        </Row>
+
+        <div style={{ marginBottom: 20 }}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            同步间隔
+          </Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+            自动同步的时间间隔
+          </Text>
+          <Select
+            style={{ width: 200 }}
+            value={calendarConfig.syncInterval}
+            onChange={(value) => handleCalendarConfigChange('syncInterval', value)}
+            disabled={!calendarConfig.enabled || !calendarConfig.autoSync}
+            options={[
+              { value: 5, label: '5 分钟' },
+              { value: 15, label: '15 分钟' },
+              { value: 30, label: '30 分钟' },
+              { value: 60, label: '60 分钟' }
+            ]}
+          />
+        </div>
+
+        <Row gutter={24}>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                同步过去天数
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+                从现在开始往前同步多少天的事件
+              </Text>
+              <Slider
+                min={1}
+                max={30}
+                step={1}
+                value={calendarConfig.syncPastDays}
+                onChange={(value) => handleCalendarConfigChange('syncPastDays', value)}
+                disabled={!calendarConfig.enabled}
+                marks={{ 1: '1', 7: '7', 14: '14', 30: '30' }}
+              />
+              <Text type="secondary">当前: {calendarConfig.syncPastDays} 天</Text>
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                同步未来天数
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+                从现在开始往后同步多少天的事件
+              </Text>
+              <Slider
+                min={1}
+                max={90}
+                step={1}
+                value={calendarConfig.syncFutureDays}
+                onChange={(value) => handleCalendarConfigChange('syncFutureDays', value)}
+                disabled={!calendarConfig.enabled}
+                marks={{ 7: '7', 14: '14', 30: '30', 60: '60', 90: '90' }}
+              />
+              <Text type="secondary">当前: {calendarConfig.syncFutureDays} 天</Text>
+            </div>
+          </Col>
+        </Row>
+
+        <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Text strong style={{ display: 'block', marginBottom: 4 }}>
+              同步全天事件
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              是否将全天日历事件同步为任务
+            </Text>
+          </div>
+          <Switch
+            checked={calendarConfig.syncAllDayEvents}
+            onChange={(checked) => handleCalendarConfigChange('syncAllDayEvents', checked)}
+            disabled={!calendarConfig.enabled}
+          />
+        </div>
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <CalendarOutlined />
+            日历选择
+          </Space>
+        }
+        style={{ marginBottom: 24 }}
+        size="small"
+      >
+        <div style={{ marginBottom: 20 }}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            要同步的日历
+          </Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+            选择需要同步的日历（可多选）
+          </Text>
+          {calendars.length > 0 ? (
+            <Checkbox.Group
+              style={{ width: '100%' }}
+              value={calendarConfig.calendarsToSync}
+              onChange={(checkedValues) => handleCalendarConfigChange('calendarsToSync', checkedValues)}
+              disabled={!calendarConfig.enabled}
+            >
+              <Row gutter={[16, 12]}>
+                {calendars.map((calendar) => (
+                  <Col span={24} key={calendar.id}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Checkbox value={calendar.id}>
+                        <Space>
+                          <div
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: 3,
+                              backgroundColor: calendar.color || '#1677ff',
+                              display: 'inline-block'
+                            }}
+                          />
+                          <Text>{calendar.name}</Text>
+                          {calendar.isDefault && <Tag color="blue" style={{ fontSize: 12 }}>默认</Tag>}
+                          {!calendar.canWrite && <Tag color="default" style={{ fontSize: 12 }}>只读</Tag>}
+                        </Space>
+                      </Checkbox>
+                    </div>
+                  </Col>
+                ))}
+              </Row>
+            </Checkbox.Group>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '20px 0', color: '#999' }}>
+              <CalendarOutlined style={{ fontSize: 24, marginBottom: 8 }} />
+              <Paragraph type="secondary" style={{ margin: 0 }}>
+                暂无可用日历，请先连接日历账户
+              </Paragraph>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            默认日历
+          </Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+            创建任务时默认同步到此日历
+          </Text>
+          <Select
+            style={{ width: '100%' }}
+            value={calendarConfig.defaultCalendarId || undefined}
+            onChange={(value) => handleCalendarConfigChange('defaultCalendarId', value)}
+            disabled={!calendarConfig.enabled}
+            placeholder="请选择默认日历"
+            allowClear
+            options={calendars
+              .filter(c => c.canWrite)
+              .map(calendar => ({
+                value: calendar.id,
+                label: (
+                  <Space>
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        backgroundColor: calendar.color || '#1677ff',
+                        display: 'inline-block'
+                      }}
+                    />
+                    {calendar.name}
+                  </Space>
+                )
+              }))}
+          />
+        </div>
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <WarningOutlined />
+            冲突与提醒设置
+          </Space>
+        }
+        style={{ marginBottom: 24 }}
+        size="small"
+      >
+        <Row gutter={24}>
+          <Col span={12}>
+            <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                  冲突检测
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  创建任务时检测是否与日历事件冲突
+                </Text>
+              </div>
+              <Switch
+                checked={calendarConfig.conflictDetectionEnabled}
+                onChange={(checked) => handleCalendarConfigChange('conflictDetectionEnabled', checked)}
+                disabled={!calendarConfig.enabled}
+              />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text strong style={{ display: 'block', marginBottom: 4 }}>
+                  空闲时间建议
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  根据日历安排自动建议空闲时间段
+                </Text>
+              </div>
+              <Switch
+                checked={calendarConfig.autoSuggestFreeTime}
+                onChange={(checked) => handleCalendarConfigChange('autoSuggestFreeTime', checked)}
+                disabled={!calendarConfig.enabled}
+              />
+            </div>
+          </Col>
+        </Row>
+
+        <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <Text strong style={{ display: 'block', marginBottom: 4 }}>
+              会议提醒
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              对同步的会议事件提前发送提醒
+            </Text>
+          </div>
+          <Switch
+            checked={calendarConfig.meetingReminderEnabled}
+            onChange={(checked) => handleCalendarConfigChange('meetingReminderEnabled', checked)}
+            disabled={!calendarConfig.enabled}
+          />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            <VideoCameraOutlined style={{ marginRight: 6 }} />
+            会议提前准备时间
+          </Text>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+            会议开始前多少分钟发送准备提醒
+          </Text>
+          <Slider
+            min={5}
+            max={60}
+            step={5}
+            value={calendarConfig.meetingPrepMinutes}
+            onChange={(value) => handleCalendarConfigChange('meetingPrepMinutes', value)}
+            disabled={!calendarConfig.enabled || !calendarConfig.meetingReminderEnabled}
+            marks={{ 5: '5', 10: '10', 15: '15', 30: '30', 45: '45', 60: '60' }}
+          />
+          <Text type="secondary">当前: {calendarConfig.meetingPrepMinutes} 分钟</Text>
+        </div>
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <SyncOutlined />
+            同步状态
+          </Space>
+        }
+        size="small"
+      >
+        <Row gutter={24} align="middle">
+          <Col span={16}>
+            <Space direction="vertical" size={4}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                上次同步时间
+              </Text>
+              <Text strong>
+                {formatSyncTime(lastSyncTime)}
+              </Text>
+            </Space>
+          </Col>
+          <Col span={8} style={{ textAlign: 'right' }}>
+            <Button
+              type="primary"
+              icon={<SyncOutlined spin={isSyncing} />}
+              onClick={handleCalendarSync}
+              disabled={!calendarConfig.enabled || isSyncing}
+              loading={isSyncing}
+            >
+              {isSyncing ? '同步中...' : '手动同步'}
+            </Button>
+          </Col>
+        </Row>
+
+        {calendarAccounts.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <Text strong style={{ display: 'block', marginBottom: 12 }}>
+              已连接账户
+            </Text>
+            <List
+              size="small"
+              dataSource={calendarAccounts}
+              renderItem={(account) => (
+                <List.Item
+                  style={{
+                    padding: '12px 16px',
+                    marginBottom: 8,
+                    borderRadius: 8,
+                    backgroundColor: account.connected ? '#f6ffed' : '#fff2f0',
+                    border: account.connected ? '1px solid #b7eb8f' : '1px solid #ffccc7'
+                  }}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      <div
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
+                          backgroundColor: account.color || '#1677ff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#fff',
+                          fontSize: 12
+                        }}
+                      >
+                        {account.type.charAt(0).toUpperCase()}
+                      </div>
+                    }
+                    title={
+                      <Space>
+                        <Text strong>{account.name}</Text>
+                        <Tag color={account.connected ? 'success' : 'error'} style={{ fontSize: 12 }}>
+                          {account.connected ? '已连接' : '未连接'}
+                        </Tag>
+                      </Space>
+                    }
+                    description={
+                      <Space>
+                        <Tag color="default" style={{ fontSize: 12 }}>
+                          {account.type}
+                        </Tag>
+                        {account.email && (
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {account.email}
+                          </Text>
+                        )}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </div>
+        )}
+      </Card>
+    </div>
+  )
 
   const reminderTabContent = (
     <div style={{ padding: '16px 0' }}>
@@ -868,6 +1346,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
         </Space>
       ),
       children: hotkeyTabContent
+    },
+    {
+      key: 'calendar',
+      label: (
+        <Space>
+          <CalendarOutlined />
+          日历同步
+        </Space>
+      ),
+      children: calendarTabContent
     }
   ]
 

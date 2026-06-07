@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip, Dropdown } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined, RobotOutlined, BookOutlined } from '@ant-design/icons'
+import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip, Dropdown, notification } from 'antd'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined, RobotOutlined, BookOutlined, VideoCameraOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory, HotkeyConfig, PendingReminder } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
 import { soundManager } from './utils/soundManager'
 import { reminderManager } from './utils/reminderManager'
+import { calendarManager } from './utils/calendarManager'
 import { TaskForm } from './components/TaskForm'
 import { QuickTaskForm } from './components/QuickTaskForm'
 import { NaturalLanguageTaskForm } from './components/NaturalLanguageTaskForm'
@@ -56,6 +57,8 @@ const App: React.FC = () => {
   const tasksRef = useRef<Task[]>([])
   const historyRef = useRef<TaskHistory[]>([])
   const hotkeyUnsubscribeRef = useRef<(() => void) | null>(null)
+  const calendarSyncIntervalRef = useRef<number | null>(null)
+  const meetingPrepRemindedRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     tasksRef.current = tasks
@@ -151,20 +154,129 @@ const App: React.FC = () => {
     log('提醒管理器初始化完成')
   }, [])
 
+  const initCalendarManager = useCallback(async () => {
+    log('初始化日历管理器...')
+    
+    try {
+      await calendarManager.init()
+      
+      const syncConfig = await storage.getCalendarSyncConfig()
+      
+      if (syncConfig.enabled) {
+        const initialResult = await calendarManager.sync()
+        log('初始日历同步完成，事件数:', initialResult.eventsCount)
+        
+        const currentTasks = tasksRef.current
+        const syncStats = await calendarManager.syncCalendarEventsToTasks(currentTasks)
+        if (syncStats.created > 0) {
+          const updatedTasks = await storage.getTasks()
+          await saveTasks(updatedTasks)
+          message.success(`已从日历同步 ${syncStats.created} 个任务，更新 ${syncStats.updated} 个`)
+        }
+
+        if (syncConfig.autoSync) {
+          calendarManager.startAutoSync()
+        }
+      }
+
+      calendarManager.onSync(async (events) => {
+        log('日历自动同步完成，事件数:', events.length)
+        if (events.length > 0) {
+          const currentTasks = tasksRef.current
+          const syncStats = await calendarManager.syncCalendarEventsToTasks(currentTasks)
+          if (syncStats.created > 0 || syncStats.updated > 0) {
+            const updatedTasks = await storage.getTasks()
+            await saveTasks(updatedTasks)
+          }
+        }
+      })
+
+      log('日历管理器初始化完成')
+    } catch (err) {
+      console.error('初始化日历管理器失败:', err)
+    }
+  }, [])
+
+  const checkMeetingPrepReminders = useCallback(async () => {
+    const now = dayjs()
+    const currentTasks = tasksRef.current
+
+    for (const task of currentTasks) {
+      if (!task.enabled || !task.isMeeting || task.meetingPrepReminded) continue
+
+      const taskTime = dayjs(task.targetTime)
+      const minutesUntilMeeting = taskTime.diff(now, 'minute')
+
+      const prepTime = 15
+      if (minutesUntilMeeting > 0 && minutesUntilMeeting <= prepTime) {
+        const remindedKey = `${task.id}-${task.targetTime}`
+        if (!meetingPrepRemindedRef.current.has(remindedKey)) {
+          meetingPrepRemindedRef.current.add(remindedKey)
+          
+          const meetingInfo = await storage.findMeetingUrl(
+            task.notes + ' ' + (task.description || '') + ' ' + JSON.stringify(task.links || [])
+          )
+
+          notification.info({
+            message: '会议准备提醒',
+            description: (
+              <div>
+                <p><strong>{task.title}</strong> 将在 {minutesUntilMeeting} 分钟后开始</p>
+                {meetingInfo && (
+                  <Button
+                    type="primary"
+                    icon={<VideoCameraOutlined />}
+                    onClick={() => {
+                      calendarManager.openMeeting(meetingInfo.url)
+                      notification.destroy()
+                    }}
+                    style={{ marginTop: 8 }}
+                  >
+                    立即加入会议
+                  </Button>
+                )}
+              </div>
+            ),
+            duration: 0,
+            placement: 'topRight',
+            icon: <VideoCameraOutlined style={{ color: '#1677ff' }} />
+          })
+
+          const updatedTasks = currentTasks.map(t =>
+            t.id === task.id ? { ...t, meetingPrepReminded: true } : t
+          )
+          saveTasks(updatedTasks)
+
+          log('会议准备提醒已发送:', task.title, minutesUntilMeeting, '分钟后开始')
+        }
+      }
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
     requestNotificationPermission()
     initHotkeys()
     initWidget()
     initReminderManager()
+    initCalendarManager()
+
+    const calendarCheckInterval = window.setInterval(() => {
+      checkMeetingPrepReminders()
+    }, 60000)
 
     return () => {
       if (hotkeyUnsubscribeRef.current) {
         hotkeyUnsubscribeRef.current()
       }
+      if (calendarSyncIntervalRef.current) {
+        clearInterval(calendarSyncIntervalRef.current)
+      }
+      clearInterval(calendarCheckInterval)
+      calendarManager.stopAutoSync()
       reminderManager.destroy()
     }
-  }, [loadData, requestNotificationPermission, initHotkeys, initWidget, initReminderManager])
+  }, [loadData, requestNotificationPermission, initHotkeys, initWidget, initReminderManager, initCalendarManager, checkMeetingPrepReminders])
 
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     setTasks(newTasks)
@@ -363,9 +475,31 @@ const App: React.FC = () => {
     )
     await saveTasks(updatedTasks)
     message.success('任务时间已更新')
+
+    if (task.calendarSync?.autoSyncToCalendar && task.calendarSync.calendarEventId) {
+      try {
+        const updatedTask = { ...task, targetTime: newTime }
+        await calendarManager.syncTaskToCalendar(updatedTask)
+      } catch (err) {
+        console.error('同步任务时间变更到日历失败:', err)
+        message.warning('同步到日历失败')
+      }
+    }
   }, [tasks, saveTasks])
 
   const handleDeleteTask = async (id: string) => {
+    const taskToDelete = tasks.find(t => t.id === id)
+    
+    if (taskToDelete?.calendarSync?.calendarEventId) {
+      try {
+        await storage.deleteCalendarEvent(taskToDelete.calendarSync.calendarEventId)
+        log('已删除关联的日历事件')
+      } catch (err) {
+        console.error('删除日历事件失败:', err)
+        message.warning('删除日历事件失败')
+      }
+    }
+
     const newTasks = tasks.filter((t) => t.id !== id)
     await saveTasks(newTasks)
     message.success('任务已删除')
@@ -388,13 +522,23 @@ const App: React.FC = () => {
 
   const handleFormSubmit = async (taskData: Omit<Task, 'id' | 'createdAt'>) => {
     if (editingTask) {
+      const updatedTask: Task = {
+        ...editingTask,
+        ...taskData
+      }
       const updatedTasks = tasks.map((t) =>
-        t.id === editingTask.id
-          ? { ...t, ...taskData }
-          : t
+        t.id === editingTask.id ? updatedTask : t
       )
       await saveTasks(updatedTasks)
       message.success('任务已更新')
+
+      if (taskData.calendarSync?.autoSyncToCalendar) {
+        try {
+          await calendarManager.syncTaskToCalendar(updatedTask)
+        } catch (err) {
+          console.error('同步到日历失败:', err)
+        }
+      }
     } else {
       const newTask: Task = {
         id: generateId(),
@@ -403,6 +547,14 @@ const App: React.FC = () => {
       }
       await saveTasks([...tasks, newTask])
       message.success('任务已创建')
+
+      if (taskData.calendarSync?.autoSyncToCalendar && taskData.calendarSync?.calendarId) {
+        try {
+          await calendarManager.syncTaskToCalendar(newTask)
+        } catch (err) {
+          console.error('同步到日历失败:', err)
+        }
+      }
     }
     setFormOpen(false)
     setEditingTask(null)

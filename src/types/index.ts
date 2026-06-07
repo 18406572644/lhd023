@@ -117,6 +117,9 @@ export interface Task {
   attachments: TaskAttachment[]
   isPinned: boolean
   pinnedAt?: string
+  calendarSync?: TaskCalendarSyncInfo
+  isMeeting?: boolean
+  meetingPrepReminded?: boolean
 }
 
 export interface TaskHistory {
@@ -199,9 +202,92 @@ export interface NLPParseResult {
   missingFields: string[]
 }
 
+export interface CalendarAccount {
+  id: string
+  name: string
+  type: 'outlook' | 'google' | 'icloud' | 'exchange' | 'local'
+  email?: string
+  connected: boolean
+  connectedAt?: string
+  color?: string
+}
+
+export interface Calendar {
+  id: string
+  accountId: string
+  name: string
+  color: string
+  isDefault: boolean
+  canWrite: boolean
+}
+
+export type CalendarEventStatus = 'free' | 'tentative' | 'busy' | 'outOfOffice'
+
+export interface CalendarEvent {
+  id: string
+  calendarId: string
+  title: string
+  description?: string
+  location?: string
+  startTime: string
+  endTime: string
+  isAllDay: boolean
+  status: CalendarEventStatus
+  isRecurring: boolean
+  seriesMasterId?: string
+  organizer?: string
+  attendees?: string[]
+  onlineMeetingUrl?: string
+  meetingProvider?: 'zoom' | 'teams' | 'meet' | 'webex' | 'other'
+  source: 'system' | 'local'
+  lastSyncedAt?: string
+  etag?: string
+}
+
+export interface CalendarSyncConfig {
+  enabled: boolean
+  autoSync: boolean
+  syncInterval: number
+  syncAllDayEvents: boolean
+  syncPastDays: number
+  syncFutureDays: number
+  defaultCalendarId?: string
+  calendarsToSync: string[]
+  defaultReminderMinutes: number
+  conflictDetectionEnabled: boolean
+  autoSuggestFreeTime: boolean
+  meetingReminderEnabled: boolean
+  meetingPrepMinutes: number
+}
+
+export interface CalendarConflict {
+  taskId: string
+  taskTitle: string
+  eventId: string
+  eventTitle: string
+  overlappingStart: string
+  overlappingEnd: string
+  severity: 'warning' | 'conflict'
+}
+
+export interface TimeSlot {
+  start: string
+  end: string
+  available: boolean
+}
+
+export interface TaskCalendarSyncInfo {
+  calendarEventId?: string
+  calendarId?: string
+  syncedAt?: string
+  autoSyncToCalendar: boolean
+  syncDirty?: boolean
+}
+
 export interface AppSettings {
   defaultSoundId: string
   sounds: SoundOption[]
   hotkeys: HotkeyConfig[]
   widget: WidgetConfig
+  calendar: CalendarSyncConfig
 }

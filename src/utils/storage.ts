@@ -1,4 +1,4 @@
-import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize, VocabMapping, NLPLearningData } from '../types'
+import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize, VocabMapping, NLPLearningData, CalendarAccount, Calendar, CalendarEvent, CalendarSyncConfig, CalendarConflict, TimeSlot } from '../types'
 import { generateId } from './scheduler'
 import { updateWordFrequency } from './nlpParser'
 
@@ -206,6 +206,25 @@ declare global {
       notificationBadge?: {
         setBadge: (count: number) => Promise<boolean>
         clearBadge: () => Promise<boolean>
+      }
+      calendar?: {
+        getAccounts: () => Promise<CalendarAccount[]>
+        saveAccounts: (accounts: CalendarAccount[]) => Promise<boolean>
+        getCalendars: () => Promise<Calendar[]>
+        saveCalendars: (calendars: Calendar[]) => Promise<boolean>
+        getEvents: (startTime?: string, endTime?: string) => Promise<CalendarEvent[]>
+        saveEvents: (events: CalendarEvent[]) => Promise<boolean>
+        getSyncConfig: () => Promise<CalendarSyncConfig>
+        saveSyncConfig: (config: CalendarSyncConfig) => Promise<boolean>
+        sync: () => Promise<{ success: boolean; message: string; eventsCount?: number; calendarsCount?: number }>
+        createEvent: (eventData: Partial<CalendarEvent>) => Promise<{ success: boolean; event?: CalendarEvent; message?: string }>
+        updateEvent: (eventId: string, updates: Partial<CalendarEvent>) => Promise<{ success: boolean; event?: CalendarEvent; message?: string }>
+        deleteEvent: (eventId: string) => Promise<{ success: boolean; message?: string }>
+        getBusySlots: (startTime: string, endTime: string) => Promise<CalendarEvent[]>
+        suggestFreeTime: (preferredDate: string, durationMinutes?: number) => Promise<TimeSlot[]>
+        checkConflicts: (taskStartTime: string, taskEndTime: string, taskId?: string) => Promise<CalendarConflict[]>
+        openMeetingUrl: (url: string) => Promise<boolean>
+        findMeetingUrl: (text: string) => Promise<{ url: string; provider: string } | null>
       }
     }
   }
@@ -702,6 +721,259 @@ export const storage = {
       }
     } catch {
       // ignore
+    }
+  },
+
+  async getCalendarAccounts(): Promise<CalendarAccount[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.getAccounts) {
+        return await window.api.calendar.getAccounts()
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async saveCalendarAccounts(accounts: CalendarAccount[]): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.calendar?.saveAccounts) {
+        return await window.api.calendar.saveAccounts(accounts)
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async getCalendars(): Promise<Calendar[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.getCalendars) {
+        return await window.api.calendar.getCalendars()
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async saveCalendars(calendars: Calendar[]): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.calendar?.saveCalendars) {
+        return await window.api.calendar.saveCalendars(calendars)
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async getCalendarEvents(startTime?: string, endTime?: string): Promise<CalendarEvent[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.getEvents) {
+        return await window.api.calendar.getEvents(startTime, endTime)
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async saveCalendarEvents(events: CalendarEvent[]): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.calendar?.saveEvents) {
+        return await window.api.calendar.saveEvents(events)
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async getCalendarSyncConfig(): Promise<CalendarSyncConfig> {
+    const defaultConfig: CalendarSyncConfig = {
+      enabled: false,
+      autoSync: false,
+      syncInterval: 30,
+      syncAllDayEvents: true,
+      syncPastDays: 7,
+      syncFutureDays: 30,
+      defaultCalendarId: '',
+      calendarsToSync: [],
+      defaultReminderMinutes: 15,
+      conflictDetectionEnabled: true,
+      autoSuggestFreeTime: true,
+      meetingReminderEnabled: true,
+      meetingPrepMinutes: 10
+    }
+    try {
+      if (isElectron() && window.api?.calendar?.getSyncConfig) {
+        return await window.api.calendar.getSyncConfig()
+      }
+      const localData = localStorage.getItem('calendar_sync_config')
+      return localData ? { ...defaultConfig, ...JSON.parse(localData) } : defaultConfig
+    } catch {
+      return defaultConfig
+    }
+  },
+
+  async saveCalendarSyncConfig(config: CalendarSyncConfig): Promise<boolean> {
+    try {
+      localStorage.setItem('calendar_sync_config', JSON.stringify(config))
+      if (isElectron() && window.api?.calendar?.saveSyncConfig) {
+        return await window.api.calendar.saveSyncConfig(config)
+      }
+      return true
+    } catch {
+      return false
+    }
+  },
+
+  async syncCalendar(): Promise<{ success: boolean; message: string; eventsCount?: number; calendarsCount?: number }> {
+    try {
+      if (isElectron() && window.api?.calendar?.sync) {
+        return await window.api.calendar.sync()
+      }
+      return { success: false, message: '日历同步不可用' }
+    } catch (err) {
+      return { success: false, message: (err as Error).message }
+    }
+  },
+
+  async createCalendarEvent(eventData: Partial<CalendarEvent>): Promise<{ success: boolean; event?: CalendarEvent; message?: string }> {
+    try {
+      if (isElectron() && window.api?.calendar?.createEvent) {
+        return await window.api.calendar.createEvent(eventData)
+      }
+      return { success: false, message: '创建日历事件不可用' }
+    } catch (err) {
+      return { success: false, message: (err as Error).message }
+    }
+  },
+
+  async updateCalendarEvent(eventId: string, updates: Partial<CalendarEvent>): Promise<{ success: boolean; event?: CalendarEvent; message?: string }> {
+    try {
+      if (isElectron() && window.api?.calendar?.updateEvent) {
+        return await window.api.calendar.updateEvent(eventId, updates)
+      }
+      return { success: false, message: '更新日历事件不可用' }
+    } catch (err) {
+      return { success: false, message: (err as Error).message }
+    }
+  },
+
+  async deleteCalendarEvent(eventId: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      if (isElectron() && window.api?.calendar?.deleteEvent) {
+        return await window.api.calendar.deleteEvent(eventId)
+      }
+      return { success: false, message: '删除日历事件不可用' }
+    } catch (err) {
+      return { success: false, message: (err as Error).message }
+    }
+  },
+
+  async getBusySlots(startTime: string, endTime: string): Promise<CalendarEvent[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.getBusySlots) {
+        return await window.api.calendar.getBusySlots(startTime, endTime)
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async suggestFreeTime(preferredDate: string, durationMinutes?: number): Promise<TimeSlot[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.suggestFreeTime) {
+        return await window.api.calendar.suggestFreeTime(preferredDate, durationMinutes)
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async checkCalendarConflicts(taskStartTime: string, taskEndTime: string, taskId?: string): Promise<CalendarConflict[]> {
+    try {
+      if (isElectron() && window.api?.calendar?.checkConflicts) {
+        return await window.api.calendar.checkConflicts(taskStartTime, taskEndTime, taskId)
+      }
+      return []
+    } catch {
+      return []
+    }
+  },
+
+  async openMeetingUrl(url: string): Promise<boolean> {
+    try {
+      if (isElectron() && window.api?.calendar?.openMeetingUrl) {
+        return await window.api.calendar.openMeetingUrl(url)
+      }
+      if (typeof window !== 'undefined') {
+        window.open(url, '_blank')
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  async findMeetingUrl(text: string): Promise<{ url: string; provider: string } | null> {
+    try {
+      if (isElectron() && window.api?.calendar?.findMeetingUrl) {
+        return await window.api.calendar.findMeetingUrl(text)
+      }
+      const urlRegex = /https?:\/\/[^\s]+/g
+      const urls = text.match(urlRegex) || []
+      for (const url of urls) {
+        const lowerUrl = url.toLowerCase()
+        let provider: string | null = null
+        if (lowerUrl.includes('zoom.us') || lowerUrl.includes('zoom.com')) provider = 'zoom'
+        else if (lowerUrl.includes('teams.microsoft.com') || lowerUrl.includes('microsoft.com')) provider = 'teams'
+        else if (lowerUrl.includes('meet.google.com') || lowerUrl.includes('hangouts')) provider = 'meet'
+        else if (lowerUrl.includes('webex.com')) provider = 'webex'
+        if (provider) return { url, provider }
+      }
+      return null
+    } catch {
+      return null
+    }
+  },
+
+  async syncTaskToCalendar(task: Task): Promise<{ success: boolean; eventId?: string; message?: string }> {
+    try {
+      const syncConfig = await this.getCalendarSyncConfig()
+      if (!syncConfig.enabled) {
+        return { success: false, message: '日历同步未启用' }
+      }
+
+      const duration = task.duration || 30
+      const startTime = task.targetTime
+      const endTime = new Date(new Date(startTime).getTime() + duration * 60000).toISOString()
+
+      const eventData: Partial<CalendarEvent> = {
+        title: task.title,
+        description: task.description || task.notes || '',
+        startTime,
+        endTime,
+        isAllDay: false,
+        status: 'busy',
+        calendarId: task.calendarSync?.calendarId || syncConfig.defaultCalendarId
+      }
+
+      let result
+      if (task.calendarSync?.calendarEventId) {
+        result = await this.updateCalendarEvent(task.calendarSync.calendarEventId, eventData)
+      } else {
+        result = await this.createCalendarEvent(eventData)
+      }
+
+      return result
+    } catch (err) {
+      return { success: false, message: (err as Error).message }
     }
   }
 }

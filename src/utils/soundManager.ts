@@ -334,6 +334,21 @@ const getDefaultSettings = (): AppSettings => ({
     opacity: 0.9,
     position: { x: 100, y: 100 },
     alwaysOnTop: true
+  },
+  calendar: {
+    enabled: false,
+    autoSync: false,
+    syncInterval: 30,
+    syncAllDayEvents: true,
+    syncPastDays: 7,
+    syncFutureDays: 30,
+    defaultCalendarId: '',
+    calendarsToSync: [],
+    defaultReminderMinutes: 15,
+    conflictDetectionEnabled: true,
+    autoSuggestFreeTime: true,
+    meetingReminderEnabled: true,
+    meetingPrepMinutes: 10
   }
 })
 

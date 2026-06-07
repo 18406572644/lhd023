@@ -1,14 +1,20 @@
-import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip, Tag, message, Typography, Tabs, Badge } from 'antd'
-import { PlayCircleOutlined, PauseCircleOutlined, SoundOutlined, FileTextOutlined, LinkOutlined, PaperClipOutlined, EditTwoTone, InfoCircleOutlined } from '@ant-design/icons'
+import React, { useEffect, useState, useCallback } from 'react'
+import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip, Tag, message, Typography, Tabs, Badge, Alert, List } from 'antd'
+import { 
+  PlayCircleOutlined, PauseCircleOutlined, SoundOutlined, FileTextOutlined, 
+  LinkOutlined, PaperClipOutlined, EditTwoTone, InfoCircleOutlined,
+  CalendarOutlined, SyncOutlined, WarningOutlined, BulbOutlined,
+  VideoCameraOutlined
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task, SoundOption, TaskPriority, TaskTag, TaskTemplate, TaskLink, TaskAttachment } from '../types'
+import type { Task, SoundOption, TaskPriority, TaskTag, TaskTemplate, TaskLink, TaskAttachment, Calendar, CalendarConflict, TaskCalendarSyncInfo } from '../types'
 import { soundManager } from '../utils/soundManager'
 import { storage } from '../utils/storage'
 import { priorityColors, priorityLabels, tagColors, tagLabels, categoryColors, categoryLabels } from '../utils/constants'
 import { RichTextEditor } from './RichTextEditor'
 import { LinkManager } from './LinkManager'
 import { AttachmentManager } from './AttachmentManager'
+import { calendarManager } from '../utils/calendarManager'
 
 const { Text } = Typography
 const { TextArea } = Input
@@ -47,8 +53,31 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
   const [activeTab, setActiveTab] = useState('basic')
   const [isPinned, setIsPinned] = useState(false)
   const [pinnedAt, setPinnedAt] = useState<string | undefined>(undefined)
+  const [calendars, setCalendars] = useState<Calendar[]>([])
+  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('')
+  const [autoSyncToCalendar, setAutoSyncToCalendar] = useState(false)
+  const [conflicts, setConflicts] = useState<CalendarConflict[]>([])
+  const [showConflictAlert, setShowConflictAlert] = useState(false)
+  const [freeTimeSuggestions, setFreeTimeSuggestions] = useState<Array<{ start: string; end: string; score: number }>>([])
+  const [showFreeTimeSuggestions, setShowFreeTimeSuggestions] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [calendarSync, setCalendarSync] = useState<TaskCalendarSyncInfo | undefined>(undefined)
+  const [isMeeting, setIsMeeting] = useState(false)
   const repeatType = Form.useWatch('repeatType', form)
   const soundEnabled = Form.useWatch('soundEnabled', form)
+  const targetTime = Form.useWatch('targetTime', form)
+  const duration = Form.useWatch('duration', form)
+  const title = Form.useWatch('title', form)
+
+  const loadCalendarData = useCallback(async () => {
+    const [loadedCalendars, syncConfig] = await Promise.all([
+      calendarManager.getCalendars(),
+      storage.getCalendarSyncConfig()
+    ])
+    setCalendars(loadedCalendars.filter(c => c.canWrite))
+    setSelectedCalendarId(syncConfig.defaultCalendarId || loadedCalendars.find(c => c.isDefault)?.id || '')
+    setAutoSyncToCalendar(syncConfig.autoSync)
+  }, [])
 
   useEffect(() => {
     const loadData = async () => {
@@ -60,9 +89,63 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
       setSounds(loadedSounds)
       setDefaultSoundId(loadedDefault)
       setTemplates(loadedTemplates)
+      await loadCalendarData()
     }
     loadData()
-  }, [])
+  }, [loadCalendarData])
+
+  const checkConflicts = useCallback(async () => {
+    if (!targetTime || !duration) return
+
+    try {
+      const taskStartTime = targetTime.toISOString()
+      const taskEndTime = targetTime.add(duration, 'minute').toISOString()
+      
+      const detectedConflicts = await storage.checkCalendarConflicts(
+        taskStartTime,
+        taskEndTime,
+        task?.id
+      )
+      
+      setConflicts(detectedConflicts)
+      setShowConflictAlert(detectedConflicts.length > 0)
+
+      if (detectedConflicts.length > 0) {
+        const syncConfig = await storage.getCalendarSyncConfig()
+        if (syncConfig.autoSuggestFreeTime) {
+          const suggestions = await calendarManager.suggestFreeTime(
+            targetTime.toISOString(),
+            duration
+          )
+          setFreeTimeSuggestions(suggestions)
+          setShowFreeTimeSuggestions(suggestions.length > 0)
+        }
+      }
+    } catch (err) {
+      console.error('检查冲突失败:', err)
+    }
+  }, [targetTime, duration, task])
+
+  useEffect(() => {
+    if (open && targetTime && duration) {
+      const timer = setTimeout(() => {
+        checkConflicts()
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [open, targetTime, duration, checkConflicts])
+
+  const detectMeeting = useCallback(() => {
+    if (!title && !notes) return false
+    const meetingKeywords = ['会议', 'meeting', '讨论', '评审', '周会', '站会', 'standup', 'review', 'sync']
+    const text = (title || '') + ' ' + (notes || '')
+    const lowerText = text.toLowerCase()
+    return meetingKeywords.some(keyword => lowerText.includes(keyword.toLowerCase()))
+  }, [title, notes])
+
+  useEffect(() => {
+    setIsMeeting(detectMeeting())
+  }, [detectMeeting])
 
   const handleTemplateSelect = async (templateId: string) => {
     if (!templateId) return
@@ -108,6 +191,12 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
         setAttachments(task.attachments || [])
         setIsPinned(task.isPinned || false)
         setPinnedAt(task.pinnedAt)
+        setCalendarSync(task.calendarSync)
+        setIsMeeting(task.isMeeting || false)
+        setAutoSyncToCalendar(task.calendarSync?.autoSyncToCalendar || false)
+        if (task.calendarSync?.calendarId) {
+          setSelectedCalendarId(task.calendarSync.calendarId)
+        }
       } else if (templateData) {
         form.setFieldsValue({
           title: templateData.title,
@@ -151,9 +240,44 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
     }
   }, [open, task, templateData, form, onTemplateDataApplied])
 
-  const handleOk = () => {
+  const syncTaskToCalendar = useCallback(async (taskData: Omit<Task, 'id' | 'createdAt'> & { id?: string }) => {
+    if (!autoSyncToCalendar || !selectedCalendarId) return { success: true }
+
+    setIsSyncing(true)
+    try {
+      const fullTask: Task = {
+        ...taskData,
+        id: taskData.id || 'temp-id',
+        createdAt: new Date().toISOString(),
+        calendarSync: {
+          ...calendarSync,
+          autoSyncToCalendar: true,
+          calendarId: selectedCalendarId,
+          calendarEventId: calendarSync?.calendarEventId,
+          syncedAt: new Date().toISOString()
+        }
+      }
+      const result = await calendarManager.syncTaskToCalendar(fullTask)
+      if (result.success && result.eventId) {
+        fullTask.calendarSync!.calendarEventId = result.eventId
+        message.success('已同步到系统日历')
+      } else if (!result.success) {
+        message.warning(result.message || '同步到日历失败')
+      }
+      return result
+    } catch (error) {
+      console.error('同步到日历失败:', error)
+      return { success: false }
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [autoSyncToCalendar, selectedCalendarId, calendarSync])
+
+  const handleOk = async () => {
     soundManager.stopSound()
-    form.validateFields().then((values) => {
+    try {
+      const values = await form.validateFields()
+      
       const taskData: Omit<Task, 'id' | 'createdAt'> = {
         title: values.title,
         description: values.description || '',
@@ -171,11 +295,26 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
         links: links,
         attachments: attachments,
         isPinned: task ? isPinned : false,
-        pinnedAt: task ? pinnedAt : undefined
+        pinnedAt: task ? pinnedAt : undefined,
+        isMeeting: isMeeting,
+        calendarSync: autoSyncToCalendar ? {
+          autoSyncToCalendar: true,
+          calendarId: selectedCalendarId,
+          calendarEventId: calendarSync?.calendarEventId,
+          syncedAt: calendarSync?.syncedAt
+        } : calendarSync,
+        meetingPrepReminded: false
       }
+
+      if (task && task.id) {
+        await syncTaskToCalendar({ ...taskData, id: task.id })
+      }
+
       onSubmit(taskData)
       form.resetFields()
-    })
+    } catch (error) {
+      console.error('保存失败:', error)
+    }
   }
 
   const handleCancel = () => {
@@ -188,6 +327,60 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
     if (sound) {
       soundManager.toggleSound(sound)
     }
+  }
+
+  const handleSyncToCalendar = async () => {
+    try {
+      const values = await form.validateFields()
+      
+      const taskData: Omit<Task, 'id' | 'createdAt'> = {
+        title: values.title,
+        description: values.description || '',
+        targetTime: values.targetTime.toISOString(),
+        repeatType: values.repeatType,
+        repeatInterval: values.repeatInterval,
+        repeatDays: values.repeatDays,
+        enabled: values.enabled,
+        soundEnabled: values.soundEnabled,
+        soundId: values.soundId,
+        priority: values.priority,
+        tag: values.tag,
+        duration: values.duration,
+        notes: notes,
+        links: links,
+        attachments: attachments,
+        isPinned: task ? isPinned : false,
+        pinnedAt: task ? pinnedAt : undefined,
+        isMeeting: isMeeting,
+        calendarSync: {
+          autoSyncToCalendar: true,
+          calendarId: selectedCalendarId,
+          calendarEventId: calendarSync?.calendarEventId,
+          syncedAt: calendarSync?.syncedAt
+        },
+        meetingPrepReminded: false
+      }
+
+      const result = await syncTaskToCalendar(task ? { ...taskData, id: task.id } : taskData)
+      if (result.success) {
+        setCalendarSync({
+          autoSyncToCalendar: true,
+          calendarId: selectedCalendarId,
+          calendarEventId: result.eventId,
+          syncedAt: new Date().toISOString()
+        })
+        setAutoSyncToCalendar(true)
+      }
+    } catch (error) {
+      console.error('发布到日历失败:', error)
+    }
+  }
+
+  const handleApplySuggestion = (suggestion: { start: string; end: string }) => {
+    form.setFieldsValue({
+      targetTime: dayjs(suggestion.start)
+    })
+    setShowFreeTimeSuggestions(false)
   }
 
   const tabItems = [
@@ -364,6 +557,166 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, tem
               </Form.Item>
             </Col>
           </Row>
+
+          {showConflictAlert && (
+            <Alert
+              message="日程冲突警告"
+              description={
+                <div>
+                  <p>检测到与以下日历事件存在时间重叠：</p>
+                  <List
+                    size="small"
+                    dataSource={conflicts}
+                    renderItem={(conflict) => (
+                      <List.Item>
+                        <Space>
+                          <WarningOutlined style={{ color: conflict.severity === 'conflict' ? '#ff4d4f' : '#faad14' }} />
+                          <span>
+                            <Text strong>{conflict.eventTitle}</Text>
+                            <Text type="secondary" style={{ marginLeft: 8 }}>
+                              {dayjs(conflict.overlappingStart).format('HH:mm')} - {dayjs(conflict.overlappingEnd).format('HH:mm')}
+                            </Text>
+                            <Tag color={conflict.severity === 'conflict' ? 'red' : 'orange'} style={{ marginLeft: 8 }}>
+                              {conflict.severity === 'conflict' ? '严重冲突' : '轻微重叠'}
+                            </Tag>
+                          </span>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              }
+              type="warning"
+              showIcon
+              closable
+              onClose={() => setShowConflictAlert(false)}
+              style={{ marginBottom: 16 }}
+              action={
+                showFreeTimeSuggestions && (
+                  <Button size="small" type="link" onClick={() => setShowFreeTimeSuggestions(true)}>
+                    查看空闲时间建议
+                  </Button>
+                )
+              }
+            />
+          )}
+
+          {showFreeTimeSuggestions && freeTimeSuggestions.length > 0 && (
+            <Alert
+              message="空闲时间建议"
+              description={
+                <div>
+                  <p>以下时段可用，点击快速选择：</p>
+                  <List
+                    size="small"
+                    dataSource={freeTimeSuggestions}
+                    renderItem={(suggestion, index) => (
+                      <List.Item
+                        actions={[
+                          <Button size="small" type="primary" onClick={() => handleApplySuggestion(suggestion)}>
+                            选择
+                          </Button>
+                        ]}
+                      >
+                        <Space>
+                          <BulbOutlined style={{ color: '#1890ff' }} />
+                          <span>
+                            <Text strong>建议 {index + 1}：</Text>
+                            <Text>
+                              {dayjs(suggestion.start).format('MM-DD HH:mm')} - {dayjs(suggestion.end).format('HH:mm')}
+                            </Text>
+                            <Tag color="green" style={{ marginLeft: 8 }}>
+                              匹配度 {suggestion.score}%
+                            </Tag>
+                          </span>
+                        </Space>
+                      </List.Item>
+                    )}
+                  />
+                </div>
+              }
+              type="info"
+              showIcon
+              closable
+              onClose={() => setShowFreeTimeSuggestions(false)}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+
+          <Form.Item
+            label={
+              <Space>
+                <CalendarOutlined />
+                日历同步
+              </Space>
+            }
+          >
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Row gutter={24}>
+                <Col span={12}>
+                  <Space>
+                    <Switch
+                      checked={autoSyncToCalendar}
+                      onChange={setAutoSyncToCalendar}
+                    />
+                    <Text>保存时自动同步到日历</Text>
+                  </Space>
+                </Col>
+                <Col span={12}>
+                  <Space>
+                    {isMeeting && (
+                      <Tag color="blue" icon={<VideoCameraOutlined />}>
+                        自动识别为会议
+                      </Tag>
+                    )}
+                  </Space>
+                </Col>
+              </Row>
+
+              {autoSyncToCalendar && (
+                <Select
+                  value={selectedCalendarId}
+                  onChange={setSelectedCalendarId}
+                  placeholder="选择要同步到的日历"
+                  style={{ width: '100%' }}
+                >
+                  {calendars.map((calendar) => (
+                    <Option key={calendar.id} value={calendar.id}>
+                      <Space>
+                        <span
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: '50%',
+                            backgroundColor: calendar.color,
+                            display: 'inline-block'
+                          }}
+                        />
+                        <span>{calendar.name}</span>
+                        {calendar.isDefault && <Tag color="blue">默认</Tag>}
+                      </Space>
+                    </Option>
+                  ))}
+                </Select>
+              )}
+
+              {calendarSync && calendarSync.syncedAt && (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  <SyncOutlined spin={isSyncing} /> 上次同步：{dayjs(calendarSync.syncedAt).format('YYYY-MM-DD HH:mm')}
+                </Text>
+              )}
+
+              <Button
+                type="dashed"
+                icon={<CalendarOutlined />}
+                onClick={handleSyncToCalendar}
+                loading={isSyncing}
+                disabled={!selectedCalendarId}
+              >
+                {calendarSync?.calendarEventId ? '更新到日历' : '一键发布到日历'}
+              </Button>
+            </Space>
+          </Form.Item>
 
           {soundEnabled && (
             <Form.Item
