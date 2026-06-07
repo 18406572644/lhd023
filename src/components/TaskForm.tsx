@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip } from 'antd'
+import { Modal, Form, Input, DatePicker, Select, Switch, InputNumber, Row, Col, Checkbox, Button, Space, Tooltip, Tag } from 'antd'
 import { PlayCircleOutlined, PauseCircleOutlined, SoundOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
-import type { Task, SoundOption } from '../types'
+import type { Task, SoundOption, TaskPriority, TaskTag } from '../types'
 import { soundManager } from '../utils/soundManager'
+import { priorityColors, priorityLabels, tagColors, tagLabels } from '../utils/constants'
 
 const { TextArea } = Input
 const { Option } = Select
@@ -11,6 +12,7 @@ const { Option } = Select
 interface TaskFormProps {
   open: boolean
   task: Task | null
+  defaultTime?: dayjs.Dayjs | null
   onCancel: () => void
   onSubmit: (task: Omit<Task, 'id' | 'createdAt'>) => void
 }
@@ -25,7 +27,7 @@ const weekDays = [
   { label: '周六', value: 6 }
 ]
 
-export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubmit }) => {
+export const TaskForm: React.FC<TaskFormProps> = ({ open, task, defaultTime, onCancel, onSubmit }) => {
   const [form] = Form.useForm()
   const [sounds, setSounds] = useState<SoundOption[]>([])
   const [defaultSoundId, setDefaultSoundId] = useState<string>('')
@@ -60,7 +62,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
           repeatDays: task.repeatDays,
           enabled: task.enabled,
           soundEnabled: task.soundEnabled,
-          soundId: task.soundId
+          soundId: task.soundId,
+          priority: task.priority,
+          tag: task.tag,
+          duration: task.duration
         })
       } else {
         form.resetFields()
@@ -68,7 +73,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
           repeatType: 'none',
           enabled: true,
           soundEnabled: true,
-          targetTime: dayjs().add(1, 'hour')
+          targetTime: defaultTime || dayjs().add(1, 'hour'),
+          priority: 'medium',
+          tag: 'work',
+          duration: 30
         })
       }
       return () => {
@@ -90,7 +98,10 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
         repeatDays: values.repeatDays,
         enabled: values.enabled,
         soundEnabled: values.soundEnabled,
-        soundId: values.soundId
+        soundId: values.soundId,
+        priority: values.priority,
+        tag: values.tag,
+        duration: values.duration
       }
       onSubmit(taskData)
       form.resetFields()
@@ -133,18 +144,69 @@ export const TaskForm: React.FC<TaskFormProps> = ({ open, task, onCancel, onSubm
           <TextArea placeholder="输入任务详细描述..." rows={2} maxLength={200} showCount />
         </Form.Item>
 
-        <Form.Item
-          name="targetTime"
-          label="提醒时间"
-          rules={[{ required: true, message: '请选择提醒时间' }]}
-        >
-          <DatePicker
-            showTime
-            style={{ width: '100%' }}
-            placeholder="选择日期和时间"
-            format="YYYY-MM-DD HH:mm"
-          />
-        </Form.Item>
+        <Row gutter={24}>
+          <Col span={12}>
+            <Form.Item
+              name="targetTime"
+              label="开始时间"
+              rules={[{ required: true, message: '请选择开始时间' }]}
+            >
+              <DatePicker
+                showTime
+                style={{ width: '100%' }}
+                placeholder="选择日期和时间"
+                format="YYYY-MM-DD HH:mm"
+              />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="duration"
+              label="持续时间（分钟）"
+            >
+              <InputNumber min={5} max={1440} style={{ width: '100%' }} placeholder="例如：30" />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Row gutter={24}>
+          <Col span={12}>
+            <Form.Item
+              name="priority"
+              label="优先级"
+              rules={[{ required: true, message: '请选择优先级' }]}
+            >
+              <Select>
+                {(Object.keys(priorityLabels) as TaskPriority[]).map((priority) => (
+                  <Option key={priority} value={priority}>
+                    <Space>
+                      <Tag color={priorityColors[priority]} style={{ margin: 0 }} />
+                      {priorityLabels[priority]}
+                    </Space>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              name="tag"
+              label="标签"
+              rules={[{ required: true, message: '请选择标签' }]}
+            >
+              <Select>
+                {(Object.keys(tagLabels) as TaskTag[]).map((tag) => (
+                  <Option key={tag} value={tag}>
+                    <Space>
+                      <Tag color={tagColors[tag]} style={{ margin: 0 }} />
+                      {tagLabels[tag]}
+                    </Space>
+                  </Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
 
         <Form.Item name="repeatType" label="重复方式">
           <Select>

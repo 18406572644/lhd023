@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined } from '@ant-design/icons'
+import dayjs, { Dayjs } from 'dayjs'
 import type { Task, TaskHistory } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
 import { soundManager } from './utils/soundManager'
 import { TaskForm } from './components/TaskForm'
 import { TaskList } from './components/TaskList'
+import { CalendarView } from './components/CalendarView'
 import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
@@ -31,6 +32,7 @@ const App: React.FC = () => {
   const [notificationOpen, setNotificationOpen] = useState(false)
   const [notifyingTask, setNotifyingTask] = useState<Task | null>(null)
   const [activeTab, setActiveTab] = useState('tasks')
+  const [defaultTaskTime, setDefaultTaskTime] = useState<Dayjs | null>(null)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
@@ -104,7 +106,9 @@ const App: React.FC = () => {
       enabled: true,
       createdAt: dayjs().toISOString(),
       soundEnabled: true,
-      soundId: defaultSoundId
+      soundId: defaultSoundId,
+      priority: 'medium',
+      tag: 'other'
     }
 
     setNotifyingTask(testTask)
@@ -124,7 +128,9 @@ const App: React.FC = () => {
       enabled: true,
       createdAt: dayjs().toISOString(),
       soundEnabled: true,
-      soundId: defaultSoundId
+      soundId: defaultSoundId,
+      priority: 'high',
+      tag: 'work'
     }
     saveTasks([...tasks, testTask])
     message.success('测试任务已创建，将在1分钟后触发提醒')
@@ -228,15 +234,29 @@ const App: React.FC = () => {
     }
   }, [checkTasks])
 
-  const handleAddTask = () => {
+  const handleAddTask = (defaultTime?: Dayjs | React.MouseEvent) => {
     setEditingTask(null)
+    if (defaultTime && 'isValid' in defaultTime && defaultTime.isValid()) {
+      setDefaultTaskTime(defaultTime as Dayjs)
+    } else {
+      setDefaultTaskTime(null)
+    }
     setFormOpen(true)
   }
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task)
+    setDefaultTaskTime(null)
     setFormOpen(true)
   }
+
+  const handleUpdateTaskTime = useCallback(async (task: Task, newTime: string) => {
+    const updatedTasks = tasks.map((t) =>
+      t.id === task.id ? { ...t, targetTime: newTime } : t
+    )
+    await saveTasks(updatedTasks)
+    message.success('任务时间已更新')
+  }, [tasks, saveTasks])
 
   const handleDeleteTask = async (id: string) => {
     const newTasks = tasks.filter((t) => t.id !== id)
@@ -309,6 +329,8 @@ const App: React.FC = () => {
 
   const enabledTasksCount = tasks.filter((t) => t.enabled && getNextTriggerTime(t)).length
 
+  const calendarTasksCount = tasks.filter(t => t.enabled).length
+
   const tabItems = [
     {
       key: 'tasks',
@@ -334,6 +356,27 @@ const App: React.FC = () => {
           onEdit={handleEditTask}
           onDelete={handleDeleteTask}
           onToggle={handleToggleTask}
+        />
+      )
+    },
+    {
+      key: 'calendar',
+      label: (
+        <Space>
+          <CalendarOutlined />
+          日历
+          {calendarTasksCount > 0 && (
+            <Badge count={calendarTasksCount} size="small" />
+          )}
+        </Space>
+      ),
+      children: (
+        <CalendarView
+          tasks={tasks}
+          onAddTask={handleAddTask}
+          onEditTask={handleEditTask}
+          onDeleteTask={handleDeleteTask}
+          onUpdateTaskTime={handleUpdateTaskTime}
         />
       )
     },
@@ -460,9 +503,11 @@ const App: React.FC = () => {
       <TaskForm
         open={formOpen}
         task={editingTask}
+        defaultTime={defaultTaskTime}
         onCancel={() => {
           setFormOpen(false)
           setEditingTask(null)
+          setDefaultTaskTime(null)
         }}
         onSubmit={handleFormSubmit}
       />

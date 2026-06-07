@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import type { Task, SoundOption } from '../types'
 import { getNextTriggerTime } from '../utils/scheduler'
 import { soundManager } from '../utils/soundManager'
+import { priorityColors, priorityLabels, tagColors, tagLabels, getTaskColor } from '../utils/constants'
 
 const { Text, Paragraph } = Typography
 
@@ -115,39 +116,49 @@ export const TaskList: React.FC<TaskListProps> = ({ tasks, onEdit, onDelete, onT
             ]}
           >
             <List.Item.Meta
-              avatar={
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 8,
-                    backgroundColor: task.enabled ? '#1677ff' : '#d9d9d9',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#fff'
-                  }}
-                >
-                  <BellOutlined style={{ fontSize: 20 }} />
-                </div>
-              }
-              title={
-                <Space>
-                  <Text strong style={{ fontSize: 15 }}>
-                    {task.title}
-                  </Text>
-                  <Tag color={repeatTypeColors[task.repeatType]}>
-                    {repeatTypeLabels[task.repeatType]}
-                  </Tag>
-                  {task.soundEnabled && (
-                    <Tag color="gold">
-                      <SoundOutlined style={{ marginRight: 4 }} />
-                      {getSoundName(task)}
+                avatar={
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 8,
+                      backgroundColor: task.enabled ? getTaskColor(task.priority || 'medium', task.tag || 'other') : '#d9d9d9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#fff'
+                    }}
+                  >
+                    <BellOutlined style={{ fontSize: 20 }} />
+                  </div>
+                }
+                title={
+                  <Space wrap>
+                    <Text strong style={{ fontSize: 15 }}>
+                      {task.title}
+                    </Text>
+                    <Tag color={repeatTypeColors[task.repeatType]}>
+                      {repeatTypeLabels[task.repeatType]}
                     </Tag>
-                  )}
-                  {isExpired && <Tag color="red">已过期</Tag>}
-                </Space>
-              }
+                    {task.tag && (
+                      <Tag color={tagColors[task.tag]}>
+                        {tagLabels[task.tag]}
+                      </Tag>
+                    )}
+                    {task.priority && (
+                      <Tag color={priorityColors[task.priority]}>
+                        {priorityLabels[task.priority]}优先级
+                      </Tag>
+                    )}
+                    {task.soundEnabled && (
+                      <Tag color="gold">
+                        <SoundOutlined style={{ marginRight: 4 }} />
+                        {getSoundName(task)}
+                      </Tag>
+                    )}
+                    {isExpired && <Tag color="red">已过期</Tag>}
+                  </Space>
+                }
               description={
                 <div>
                   {task.description && (

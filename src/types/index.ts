@@ -2,6 +2,10 @@ export type TaskRepeatType = 'none' | 'daily' | 'weekly' | 'monthly' | 'custom'
 
 export type SoundType = 'gentle' | 'cheerful' | 'urgent' | 'classic' | 'chime' | 'custom'
 
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export type TaskTag = 'work' | 'personal' | 'family' | 'health' | 'study' | 'other'
+
 export interface SoundOption {
   id: string
   name: string
@@ -29,6 +33,9 @@ export interface Task {
   createdAt: string
   soundEnabled: boolean
   soundId?: string
+  priority: TaskPriority
+  tag: TaskTag
+  duration?: number
 }
 
 export interface TaskHistory {

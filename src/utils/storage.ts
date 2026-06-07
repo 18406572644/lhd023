@@ -21,15 +21,27 @@ const isElectron = () => {
   return typeof window !== 'undefined' && window.api !== undefined
 }
 
+const migrateTask = (task: any): Task => {
+  return {
+    priority: 'medium',
+    tag: 'other',
+    duration: 30,
+    ...task
+  }
+}
+
 export const storage = {
   async getTasks(): Promise<Task[]> {
     try {
+      let tasks: any[] = []
       if (isElectron()) {
         const data = await window.api!.store.get(TASKS_KEY)
-        if (data) return data
+        if (data) tasks = data
+      } else {
+        const localData = localStorage.getItem(TASKS_KEY)
+        if (localData) tasks = JSON.parse(localData)
       }
-      const localData = localStorage.getItem(TASKS_KEY)
-      return localData ? JSON.parse(localData) : []
+      return tasks.map(migrateTask)
     } catch {
       return []
     }
