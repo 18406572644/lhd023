@@ -44,5 +44,19 @@ contextBridge.exposeInMainWorld('api', {
         ipcRenderer.removeListener('widget:taskUpdateRequested', handler)
       }
     }
+  },
+  windowFlash: {
+    flashTaskbar: (critical) => ipcRenderer.invoke('window:flashTaskbar', critical),
+    stopFlash: () => ipcRenderer.invoke('window:stopFlash')
+  },
+  windowState: {
+    setAlwaysOnTop: (alwaysOnTop) => ipcRenderer.invoke('window:setAlwaysOnTop', alwaysOnTop),
+    setFullScreen: (fullscreen) => ipcRenderer.invoke('window:setFullScreen', fullscreen),
+    focus: () => ipcRenderer.invoke('window:focus'),
+    show: () => ipcRenderer.invoke('window:show')
+  },
+  notificationBadge: {
+    setBadge: (count) => ipcRenderer.invoke('badge:set', count),
+    clearBadge: () => ipcRenderer.invoke('badge:clear')
   }
 })

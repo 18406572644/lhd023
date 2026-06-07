@@ -190,6 +190,20 @@ declare global {
         broadcastTaskUpdate: () => Promise<boolean>
         onTaskUpdateRequested: (callback: () => void) => () => void
       }
+      windowFlash?: {
+        flashTaskbar: (critical?: boolean) => Promise<boolean>
+        stopFlash: () => Promise<boolean>
+      }
+      windowState?: {
+        setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<boolean>
+        setFullScreen: (fullscreen: boolean) => Promise<boolean>
+        focus: () => Promise<boolean>
+        show: () => Promise<boolean>
+      }
+      notificationBadge?: {
+        setBadge: (count: number) => Promise<boolean>
+        clearBadge: () => Promise<boolean>
+      }
     }
   }
 }

@@ -484,6 +484,142 @@ ipcMain.handle('widget:broadcastTaskUpdate', () => {
   return true
 })
 
+ipcMain.handle('window:flashTaskbar', (_, critical = false) => {
+  if (mainWindow) {
+    if (!mainWindow.isVisible()) {
+      mainWindow.showInactive()
+    }
+    mainWindow.flashFrame(true)
+    if (critical) {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver')
+      mainWindow.focus()
+    }
+  }
+  return true
+})
+
+ipcMain.handle('window:stopFlash', () => {
+  if (mainWindow) {
+    mainWindow.flashFrame(false)
+    mainWindow.setAlwaysOnTop(false)
+  }
+  return true
+})
+
+ipcMain.handle('window:setAlwaysOnTop', (_, alwaysOnTop = false) => {
+  if (mainWindow) {
+    mainWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? 'screen-saver' : 'normal')
+  }
+  return true
+})
+
+ipcMain.handle('window:setFullScreen', (_, fullscreen = false) => {
+  if (mainWindow) {
+    mainWindow.setFullScreen(fullscreen)
+    if (fullscreen) {
+      mainWindow.setAlwaysOnTop(true, 'screen-saver')
+      mainWindow.focus()
+    }
+  }
+  return true
+})
+
+ipcMain.handle('window:focus', () => {
+  if (mainWindow) {
+    mainWindow.show()
+    mainWindow.focus()
+  }
+  return true
+})
+
+ipcMain.handle('window:show', () => {
+  if (mainWindow) {
+    mainWindow.show()
+  }
+  return true
+})
+
+ipcMain.handle('badge:set', (_, count) => {
+  try {
+    if (process.platform === 'darwin') {
+      app.dock.setBadge(count > 0 ? String(count) : '')
+    } else if (mainWindow && tray) {
+      if (count > 0) {
+        mainWindow.setOverlayIcon(null, `待处理提醒: ${count}`)
+        const badgeIcon = createBadgeIcon(count)
+        if (badgeIcon) {
+          tray.setImage(badgeIcon)
+        }
+      } else {
+        mainWindow.setOverlayIcon(null, '')
+        const trayIcon = nativeImage.createEmpty()
+        tray.setImage(trayIcon)
+      }
+    }
+  } catch (err) {
+    console.error('设置徽章失败:', err)
+  }
+  return true
+})
+
+ipcMain.handle('badge:clear', () => {
+  try {
+    if (process.platform === 'darwin') {
+      app.dock.setBadge('')
+    } else if (mainWindow && tray) {
+      mainWindow.setOverlayIcon(null, '')
+      const trayIcon = nativeImage.createEmpty()
+      tray.setImage(trayIcon)
+    }
+  } catch (err) {
+    console.error('清除徽章失败:', err)
+  }
+  return true
+})
+
+function createBadgeIcon(count) {
+  try {
+    const displayCount = count > 99 ? '99+' : String(count)
+    const size = 32
+    const canvas = Buffer.alloc(size * size * 4)
+    
+    const centerX = size / 2
+    const centerY = size / 2
+    const radius = size / 2 - 2
+    
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - centerX
+        const dy = y - centerY
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const idx = (y * size + x) * 4
+        
+        if (dist <= radius) {
+          canvas[idx] = 255
+          canvas[idx + 1] = 77
+          canvas[idx + 2] = 79
+          canvas[idx + 3] = 255
+        } else {
+          canvas[idx] = 0
+          canvas[idx + 1] = 0
+          canvas[idx + 2] = 0
+          canvas[idx + 3] = 0
+        }
+      }
+    }
+    
+    const icon = nativeImage.createFromBuffer(canvas, {
+      width: size,
+      height: size
+    })
+    
+    return icon
+  } catch (err) {
+    console.error('创建徽章图标失败:', err)
+    return null
+  }
+}
+
 app.whenReady().then(() => {
   try {
     store = new Store()

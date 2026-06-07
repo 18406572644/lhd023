@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined } from '@ant-design/icons'
+import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip, Dropdown } from 'antd'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import type { Task, TaskHistory, HotkeyConfig } from './types'
+import type { Task, TaskHistory, HotkeyConfig, PendingReminder } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
 import { soundManager } from './utils/soundManager'
+import { reminderManager } from './utils/reminderManager'
 import { TaskForm } from './components/TaskForm'
 import { QuickTaskForm } from './components/QuickTaskForm'
 import { TaskList } from './components/TaskList'
@@ -13,6 +14,7 @@ import { CalendarView } from './components/CalendarView'
 import { HistoryPanel } from './components/HistoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
 import { NotificationModal } from './components/NotificationModal'
+import { FullscreenReminder } from './components/FullscreenReminder'
 import { TemplateManager } from './components/TemplateManager'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { StatsPanel } from './components/StatsPanel'
@@ -35,7 +37,9 @@ const App: React.FC = () => {
   const [quickFormOpen, setQuickFormOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
   const [notificationOpen, setNotificationOpen] = useState(false)
-  const [notifyingTask, setNotifyingTask] = useState<Task | null>(null)
+  const [currentReminder, setCurrentReminder] = useState<PendingReminder | null>(null)
+  const [fullscreenReminder, setFullscreenReminder] = useState<PendingReminder | null>(null)
+  const [badgeCount, setBadgeCount] = useState(0)
   const [activeTab, setActiveTab] = useState('tasks')
   const [defaultTaskTime, setDefaultTaskTime] = useState<Dayjs | null>(null)
   const [hotkeys, setHotkeys] = useState<HotkeyConfig[]>([])
@@ -122,18 +126,41 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const initReminderManager = useCallback(() => {
+    log('初始化提醒管理器...')
+
+    reminderManager.setBadgeChangeCallback((count) => {
+      setBadgeCount(count)
+    })
+
+    reminderManager.setFullscreenReminderCallback((reminder) => {
+      log('全屏提醒回调:', reminder?.task.title)
+      setFullscreenReminder(reminder)
+    })
+
+    reminderManager.setNormalReminderCallback((reminder) => {
+      log('普通提醒回调:', reminder.task.title)
+      setCurrentReminder(reminder)
+      setNotificationOpen(true)
+    })
+
+    log('提醒管理器初始化完成')
+  }, [])
+
   useEffect(() => {
     loadData()
     requestNotificationPermission()
     initHotkeys()
     initWidget()
+    initReminderManager()
 
     return () => {
       if (hotkeyUnsubscribeRef.current) {
         hotkeyUnsubscribeRef.current()
       }
+      reminderManager.destroy()
     }
-  }, [loadData, requestNotificationPermission, initHotkeys, initWidget])
+  }, [loadData, requestNotificationPermission, initHotkeys, initWidget, initReminderManager])
 
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     setTasks(newTasks)
@@ -170,20 +197,20 @@ const App: React.FC = () => {
     log('添加历史记录:', task.title, status)
   }, [saveHistory])
 
-  const triggerTestNotification = useCallback(async () => {
-    log('手动触发测试提醒')
+  const triggerTestNotification = useCallback(async (priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium') => {
+    log('手动触发测试提醒，优先级:', priority)
     const defaultSoundId = await soundManager.getDefaultSoundId()
     const testTask: Task = {
       id: 'test-' + Date.now(),
-      title: '🔔 测试提醒',
-      description: '这是一条测试提醒，用于验证通知功能是否正常工作！',
+      title: `🔔 测试提醒 (${reminderManager.getPriorityLabel(priority)})`,
+      description: `这是一条${reminderManager.getPriorityLabel(priority)}测试提醒，用于验证通知功能是否正常工作！`,
       targetTime: dayjs().toISOString(),
       repeatType: 'none',
       enabled: true,
       createdAt: dayjs().toISOString(),
       soundEnabled: true,
       soundId: defaultSoundId,
-      priority: 'medium',
+      priority: priority,
       tag: 'other',
       notes: '',
       links: [],
@@ -191,11 +218,8 @@ const App: React.FC = () => {
       isPinned: false
     }
 
-    setNotifyingTask(testTask)
-    setNotificationOpen(true)
-    storage.notify('测试提醒', '这是一条测试提醒，用于验证通知功能是否正常工作！')
-    addHistoryRecord(testTask, 'completed')
-  }, [addHistoryRecord])
+    await reminderManager.triggerReminder(testTask)
+  }, [])
 
   const createTestTask = useCallback(async () => {
     const defaultSoundId = await soundManager.getDefaultSoundId()
@@ -236,23 +260,18 @@ const App: React.FC = () => {
 
       const shouldTrigger = shouldTriggerTask(task, now)
       const alreadyTriggered = triggeredTasksRef.current.has(task.id)
+      const hasPendingReminder = reminderManager.getPendingReminders().some(r => r.taskId === task.id && !r.acknowledged)
 
-      log('检查任务:', task.title, '应触发:', shouldTrigger, '已触发:', alreadyTriggered, '目标时间:', dayjs(task.targetTime).format('YYYY-MM-DD HH:mm'))
+      log('检查任务:', task.title, '应触发:', shouldTrigger, '已触发:', alreadyTriggered, '有待处理:', hasPendingReminder, '目标时间:', dayjs(task.targetTime).format('YYYY-MM-DD HH:mm'))
 
-      if (shouldTrigger && !alreadyTriggered) {
+      if (shouldTrigger && !alreadyTriggered && !hasPendingReminder) {
         log('===== 触发任务 =====')
         log('任务名称:', task.title)
         log('任务描述:', task.description)
+        log('任务优先级:', task.priority)
 
         triggeredTasksRef.current.add(task.id)
-        setNotifyingTask(task)
-        setNotificationOpen(true)
-
-        storage.notify('任务提醒', task.title).catch(err => {
-          log('发送系统通知:', err || '成功')
-        })
-
-        addHistoryRecord(task, 'completed')
+        reminderManager.triggerReminder(task)
 
         if (task.repeatType === 'none') {
           const updatedTasks = currentTasks.map((t) =>
@@ -268,7 +287,7 @@ const App: React.FC = () => {
         }, 300000)
       }
     })
-  }, [addHistoryRecord, saveTasks])
+  }, [saveTasks])
 
   useEffect(() => {
     log('启动任务调度器，每10秒检查一次')
@@ -401,26 +420,37 @@ const App: React.FC = () => {
   }
 
   const handleSnooze = (minutes: number) => {
-    if (notifyingTask) {
-      const snoozedTask: Task = {
-        ...notifyingTask,
-        targetTime: dayjs().add(minutes, 'minute').toISOString(),
-        repeatType: 'none'
-      }
-      const updatedTasks = tasks.map((t) =>
-        t.id === notifyingTask.id ? snoozedTask : t
-      )
-      saveTasks(updatedTasks)
-      addHistoryRecord(notifyingTask, 'skipped')
+    if (currentReminder) {
+      reminderManager.snoozeReminder(currentReminder.id, minutes)
+      addHistoryRecord(currentReminder.task, 'skipped')
       message.success(`将在 ${minutes} 分钟后再次提醒`)
     }
     setNotificationOpen(false)
-    setNotifyingTask(null)
+    setCurrentReminder(null)
   }
 
   const handleNotificationClose = () => {
+    if (currentReminder) {
+      reminderManager.acknowledgeReminder(currentReminder.id)
+    }
     setNotificationOpen(false)
-    setNotifyingTask(null)
+    setCurrentReminder(null)
+  }
+
+  const handleFullscreenSnooze = (minutes: number) => {
+    if (fullscreenReminder) {
+      reminderManager.snoozeReminder(fullscreenReminder.id, minutes)
+      addHistoryRecord(fullscreenReminder.task, 'skipped')
+      message.success(`将在 ${minutes} 分钟后再次提醒`)
+    }
+    setFullscreenReminder(null)
+  }
+
+  const handleFullscreenClose = () => {
+    if (fullscreenReminder) {
+      reminderManager.acknowledgeReminder(fullscreenReminder.id)
+    }
+    setFullscreenReminder(null)
   }
 
   const handleClearHistory = async () => {
@@ -635,18 +665,30 @@ const App: React.FC = () => {
           </Space>
 
           <Space>
-            <Button
-              onClick={triggerTestNotification}
-              size="middle"
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'low', label: '低优先级测试', onClick: () => triggerTestNotification('low') },
+                  { key: 'medium', label: '中优先级测试', onClick: () => triggerTestNotification('medium') },
+                  { key: 'high', label: '高优先级测试', onClick: () => triggerTestNotification('high') },
+                  { key: 'urgent', label: '紧急测试（全屏）', onClick: () => triggerTestNotification('urgent') }
+                ]
+              }}
             >
-              测试提醒
-            </Button>
-            <Button
-              onClick={createTestTask}
-              size="middle"
-            >
-              创建测试任务
-            </Button>
+              <Button size="middle">
+                测试提醒 <DownOutlined />
+              </Button>
+            </Dropdown>
+            <Tooltip title={`待处理提醒: ${badgeCount}`}>
+              <Badge count={badgeCount} size="small" offset={[-5, 5]}>
+                <Button
+                  onClick={createTestTask}
+                  size="middle"
+                >
+                  创建测试任务
+                </Button>
+              </Badge>
+            </Tooltip>
             <Tooltip title={widgetEnabled ? '关闭桌面小组件' : '开启桌面小组件'}>
               <Button
                 icon={widgetEnabled ? <AppstoreOutlined /> : <AppstoreAddOutlined />}
@@ -719,9 +761,15 @@ const App: React.FC = () => {
 
       <NotificationModal
         open={notificationOpen}
-        task={notifyingTask}
+        reminder={currentReminder}
         onClose={handleNotificationClose}
         onSnooze={handleSnooze}
+      />
+
+      <FullscreenReminder
+        reminder={fullscreenReminder}
+        onClose={handleFullscreenClose}
+        onSnooze={handleFullscreenSnooze}
       />
 
       <TaskDetailPanel

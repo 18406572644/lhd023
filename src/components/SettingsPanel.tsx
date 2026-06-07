@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input, Tabs, Switch } from 'antd'
+import { List, Button, message, Space, Tooltip, Popconfirm, Typography, Tag, Input, Tabs, Switch, Slider, Card, Row, Col } from 'antd'
 import {
   PlayCircleOutlined,
   PauseCircleOutlined,
@@ -11,11 +11,15 @@ import {
   SaveOutlined,
   KeyOutlined,
   ReloadOutlined,
-  StopOutlined
+  StopOutlined,
+  BellOutlined,
+  ClockCircleOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons'
-import type { SoundOption, HotkeyConfig } from '../types'
+import type { SoundOption, HotkeyConfig, ReminderSettings, TaskPriority } from '../types'
 import { soundManager } from '../utils/soundManager'
 import { storage } from '../utils/storage'
+import { reminderManager } from '../utils/reminderManager'
 
 const { Text, Paragraph } = Typography
 
@@ -35,6 +39,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
   const [recordingHotkeyId, setRecordingHotkeyId] = useState<string | null>(null)
   const [tempAccelerator, setTempAccelerator] = useState('')
   const recordingRef = useRef<boolean>(false)
+
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>(reminderManager.getSettings())
+  const reminderLevels = reminderManager.getAllReminderLevels()
 
   const loadSounds = async () => {
     const [loadedSounds, loadedDefault] = await Promise.all([
@@ -271,6 +278,194 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
 
   const builtInSounds = sounds.filter(s => s.isBuiltIn)
   const customSounds = sounds.filter(s => !s.isBuiltIn)
+
+  const handleReminderSettingChange = async (key: keyof ReminderSettings, value: any) => {
+    const newSettings = { ...reminderSettings, [key]: value }
+    setReminderSettings(newSettings)
+    await reminderManager.saveSettings({ [key]: value })
+    message.success('设置已保存')
+  }
+
+  const handleSnoozeMinutesChange = async (priority: TaskPriority, minutes: number[]) => {
+    const key = `${priority}SnoozeMinutes` as keyof ReminderSettings
+    const newSettings = { ...reminderSettings, [key]: minutes }
+    setReminderSettings(newSettings)
+    await reminderManager.saveSettings({ [key]: minutes })
+    message.success('设置已保存')
+  }
+
+  const priorityLabels: Record<TaskPriority, string> = {
+    urgent: '紧急',
+    high: '高优先级',
+    medium: '中优先级',
+    low: '低优先级'
+  }
+
+  const priorityColors: Record<TaskPriority, string> = {
+    urgent: '#ff4d4f',
+    high: '#fa8c16',
+    medium: '#1677ff',
+    low: '#52c41a'
+  }
+
+  const reminderTabContent = (
+    <div style={{ padding: '16px 0' }}>
+      <Card
+        title={
+          <Space>
+            <ClockCircleOutlined />
+            持续提醒设置
+          </Space>
+        }
+        style={{ marginBottom: 24 }}
+        size="small"
+      >
+        <Row gutter={24}>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                重复提醒间隔（分钟）
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+                未确认的提醒每隔此时间再次提醒
+              </Text>
+              <Slider
+                min={1}
+                max={30}
+                step={1}
+                value={reminderSettings.persistentReminderInterval}
+                onChange={(value) => handleReminderSettingChange('persistentReminderInterval', value)}
+                marks={{ 1: '1', 5: '5', 10: '10', 15: '15', 20: '20', 30: '30' }}
+              />
+              <Text type="secondary">当前: {reminderSettings.persistentReminderInterval} 分钟</Text>
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                最大提醒次数
+              </Text>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontSize: 12 }}>
+                超过此次数后停止自动提醒
+              </Text>
+              <Slider
+                min={1}
+                max={20}
+                step={1}
+                value={reminderSettings.maxReminderCount}
+                onChange={(value) => handleReminderSettingChange('maxReminderCount', value)}
+                marks={{ 1: '1', 5: '5', 10: '10', 15: '15', 20: '20' }}
+              />
+              <Text type="secondary">当前: {reminderSettings.maxReminderCount} 次</Text>
+            </div>
+          </Col>
+        </Row>
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <ThunderboltOutlined />
+            提醒强度配置
+          </Space>
+        }
+        style={{ marginBottom: 24 }}
+        size="small"
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 12 }}>
+          根据任务优先级自动调整提醒方式
+        </Text>
+        <List
+          dataSource={(['urgent', 'high', 'medium', 'low'] as TaskPriority[])}
+          renderItem={(priority) => (
+            <List.Item
+              key={priority}
+              style={{
+                padding: '16px',
+                marginBottom: 12,
+                borderRadius: 8,
+                borderLeft: `4px solid ${priorityColors[priority]}`,
+                backgroundColor: '#fafafa'
+              }}
+            >
+              <List.Item.Meta
+                title={
+                  <Space>
+                    <Tag color={priority === 'urgent' ? 'red' : priority === 'high' ? 'orange' : priority === 'medium' ? 'blue' : 'green'}>
+                      {priorityLabels[priority]}
+                    </Tag>
+                    <Text strong>{priorityLabels[priority]}任务</Text>
+                  </Space>
+                }
+                description={
+                  <Space wrap size={[8, 8]} style={{ marginTop: 8 }}>
+                    {reminderLevels[priority].showModal && <Tag color="blue">弹窗提醒</Tag>}
+                    {reminderLevels[priority].alwaysOnTop && <Tag color="red">窗口置顶</Tag>}
+                    {reminderLevels[priority].taskbarFlash && <Tag color="orange">任务栏闪烁</Tag>}
+                    {reminderLevels[priority].windowFlash && <Tag color="gold">窗口闪烁</Tag>}
+                    {reminderLevels[priority].playSound && <Tag color="green">播放声音</Tag>}
+                    {reminderLevels[priority].loopSound && <Tag color="red">声音循环</Tag>}
+                    {reminderLevels[priority].systemNotification && <Tag color="purple">系统通知</Tag>}
+                    {reminderLevels[priority].fullscreen && <Tag color="red">全屏提醒</Tag>}
+                    <Tag color="cyan">动画: {reminderLevels[priority].animation}</Tag>
+                  </Space>
+                }
+              />
+            </List.Item>
+          )}
+        />
+      </Card>
+
+      <Card
+        title={
+          <Space>
+            <BellOutlined />
+            稍后提醒选项
+          </Space>
+        }
+        size="small"
+      >
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 12 }}>
+          为不同优先级设置可用的稍后提醒时间选项（分钟）
+        </Text>
+        {(['urgent', 'high', 'medium', 'low'] as TaskPriority[]).map((priority) => {
+          const key = `${priority}SnoozeMinutes` as keyof ReminderSettings
+          const currentMinutes = reminderSettings[key] as number[]
+          return (
+            <div key={priority} style={{ marginBottom: 16 }}>
+              <Space style={{ marginBottom: 8 }}>
+                <Tag color={priority === 'urgent' ? 'red' : priority === 'high' ? 'orange' : priority === 'medium' ? 'blue' : 'green'}>
+                  {priorityLabels[priority]}
+                </Tag>
+                <Text strong>{priorityLabels[priority]}任务</Text>
+              </Space>
+              <Space wrap>
+                {[1, 3, 5, 10, 15, 30, 60, 120].map((min) => (
+                  <Tag
+                    key={min}
+                    color={currentMinutes.includes(min) ? (priority === 'urgent' ? 'red' : priority === 'high' ? 'orange' : priority === 'medium' ? 'blue' : 'green') : 'default'}
+                    style={{
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      padding: '4px 12px'
+                    }}
+                    onClick={() => {
+                      const newMinutes = currentMinutes.includes(min)
+                        ? currentMinutes.filter(m => m !== min)
+                        : [...currentMinutes, min].sort((a, b) => a - b)
+                      handleSnoozeMinutesChange(priority, newMinutes)
+                    }}
+                  >
+                    {currentMinutes.includes(min) ? <CheckOutlined /> : null} {min}分钟
+                  </Tag>
+                ))}
+              </Space>
+            </div>
+          )
+        })}
+      </Card>
+    </div>
+  )
 
   const soundTabContent = (
     <div style={{ padding: '16px 0' }}>
@@ -644,6 +839,16 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = () => {
   )
 
   const tabItems = [
+    {
+      key: 'reminder',
+      label: (
+        <Space>
+          <BellOutlined />
+          提醒设置
+        </Space>
+      ),
+      children: reminderTabContent
+    },
     {
       key: 'sounds',
       label: (

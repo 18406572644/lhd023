@@ -6,6 +6,45 @@ export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 export type TaskTag = 'work' | 'personal' | 'family' | 'health' | 'study' | 'other'
 
+export type ReminderAnimationType = 'slideIn' | 'bounce' | 'flash' | 'fadeIn' | 'zoomIn'
+
+export type ReminderWindowMode = 'normal' | 'fullscreen' | 'alwaysOnTop'
+
+export interface ReminderLevelConfig {
+  showModal: boolean
+  alwaysOnTop: boolean
+  taskbarFlash: boolean
+  windowFlash: boolean
+  playSound: boolean
+  loopSound: boolean
+  systemNotification: boolean
+  fullscreen: boolean
+  animation: ReminderAnimationType
+  snoozeEnabled: boolean
+}
+
+export interface PendingReminder {
+  id: string
+  taskId: string
+  task: Task
+  triggeredAt: string
+  acknowledged: boolean
+  reminderCount: number
+  nextReminderAt: string | null
+  snoozeMinutes?: number
+}
+
+export interface ReminderSettings {
+  persistentReminderInterval: number
+  maxReminderCount: number
+  urgentSnoozeMinutes: number[]
+  highSnoozeMinutes: number[]
+  mediumSnoozeMinutes: number[]
+  lowSnoozeMinutes: number[]
+  animationDuration: number
+  soundLoopInterval: number
+}
+
 export type TemplateCategory = 'meeting' | 'report' | 'health' | 'study' | 'personal' | 'work' | 'other'
 
 export interface TaskTemplate {
