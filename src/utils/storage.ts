@@ -1,4 +1,4 @@
-import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize, VocabMapping, NLPLearningData, CalendarAccount, Calendar, CalendarEvent, CalendarSyncConfig, CalendarConflict, TimeSlot } from '../types'
+import type { Task, TaskHistory, HotkeyConfig, TaskTemplate, WidgetConfig, WidgetSize, VocabMapping, NLPLearningData, CalendarAccount, Calendar, CalendarEvent, CalendarSyncConfig, CalendarConflict, TimeSlot, Objective, KeyResult, OKRMilestoneNotification } from '../types'
 import { generateId } from './scheduler'
 import { updateWordFrequency } from './nlpParser'
 
@@ -8,6 +8,8 @@ const HOTKEYS_KEY = 'task_reminder_hotkeys'
 const TEMPLATES_KEY = 'task_reminder_templates'
 const VOCAB_KEY = 'task_reminder_vocab_mappings'
 const NLP_LEARNING_KEY = 'task_reminder_nlp_learning'
+const OBJECTIVES_KEY = 'task_reminder_objectives'
+const OKR_NOTIFICATIONS_KEY = 'task_reminder_okr_notifications'
 
 export const DEFAULT_HOTKEYS: HotkeyConfig[] = [
   {
@@ -974,6 +976,214 @@ export const storage = {
       return result
     } catch (err) {
       return { success: false, message: (err as Error).message }
+    }
+  },
+
+  async getObjectives(): Promise<Objective[]> {
+    try {
+      let objectives: Objective[] = []
+      if (isElectron()) {
+        const data = await window.api!.store.get(OBJECTIVES_KEY)
+        if (data) objectives = data
+      } else {
+        const localData = localStorage.getItem(OBJECTIVES_KEY)
+        if (localData) objectives = JSON.parse(localData)
+      }
+      return objectives
+    } catch {
+      return []
+    }
+  },
+
+  async saveObjectives(objectives: Objective[]): Promise<void> {
+    try {
+      localStorage.setItem(OBJECTIVES_KEY, JSON.stringify(objectives))
+      if (isElectron()) {
+        await window.api!.store.set(OBJECTIVES_KEY, objectives)
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async addObjective(objective: Omit<Objective, 'id' | 'createdAt' | 'updatedAt' | 'keyResults' | 'notifiedMilestones' | 'status'>): Promise<Objective> {
+    const objectives = await this.getObjectives()
+    const newObjective: Objective = {
+      ...objective,
+      id: generateId(),
+      status: 'not_started',
+      keyResults: [],
+      notifiedMilestones: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    await this.saveObjectives([...objectives, newObjective])
+    return newObjective
+  },
+
+  async updateObjective(id: string, updates: Partial<Objective>): Promise<void> {
+    const objectives = await this.getObjectives()
+    const updatedObjectives = objectives.map(o =>
+      o.id === id ? { ...o, ...updates, updatedAt: new Date().toISOString() } : o
+    )
+    await this.saveObjectives(updatedObjectives)
+  },
+
+  async deleteObjective(id: string): Promise<void> {
+    const objectives = await this.getObjectives()
+    const filteredObjectives = objectives.filter(o => o.id !== id)
+    await this.saveObjectives(filteredObjectives)
+  },
+
+  async addKeyResult(objectiveId: string, kr: Omit<KeyResult, 'id' | 'objectiveId' | 'createdAt' | 'updatedAt'>): Promise<KeyResult> {
+    const objectives = await this.getObjectives()
+    const newKR: KeyResult = {
+      ...kr,
+      id: generateId(),
+      objectiveId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    
+    const updatedObjectives = objectives.map(o => {
+      if (o.id === objectiveId) {
+        const maxSortOrder = o.keyResults.length > 0 
+          ? Math.max(...o.keyResults.map(kr => kr.sortOrder)) 
+          : -1
+        return {
+          ...o,
+          keyResults: [...o.keyResults, { ...newKR, sortOrder: maxSortOrder + 1 }],
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return o
+    })
+    
+    await this.saveObjectives(updatedObjectives)
+    return newKR
+  },
+
+  async updateKeyResult(objectiveId: string, krId: string, updates: Partial<KeyResult>): Promise<void> {
+    const objectives = await this.getObjectives()
+    const updatedObjectives = objectives.map(o => {
+      if (o.id === objectiveId) {
+        return {
+          ...o,
+          keyResults: o.keyResults.map(kr =>
+            kr.id === krId ? { ...kr, ...updates, updatedAt: new Date().toISOString() } : kr
+          ),
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return o
+    })
+    await this.saveObjectives(updatedObjectives)
+  },
+
+  async deleteKeyResult(objectiveId: string, krId: string): Promise<void> {
+    const objectives = await this.getObjectives()
+    const updatedObjectives = objectives.map(o => {
+      if (o.id === objectiveId) {
+        return {
+          ...o,
+          keyResults: o.keyResults.filter(kr => kr.id !== krId),
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return o
+    })
+    await this.saveObjectives(updatedObjectives)
+  },
+
+  async updateKRProgress(objectiveId: string, krId: string, currentValue: number): Promise<void> {
+    await this.updateKeyResult(objectiveId, krId, { currentValue })
+  },
+
+  async linkKRToTask(objectiveId: string, krId: string, taskId: string): Promise<void> {
+    await this.updateKeyResult(objectiveId, krId, { taskId, type: 'task' })
+  },
+
+  async unlinkKRFromTask(objectiveId: string, krId: string): Promise<void> {
+    await this.updateKeyResult(objectiveId, krId, { taskId: undefined, type: 'numeric' })
+  },
+
+  async getOKRNotifications(): Promise<OKRMilestoneNotification[]> {
+    try {
+      let notifications: OKRMilestoneNotification[] = []
+      if (isElectron()) {
+        const data = await window.api!.store.get(OKR_NOTIFICATIONS_KEY)
+        if (data) notifications = data
+      } else {
+        const localData = localStorage.getItem(OKR_NOTIFICATIONS_KEY)
+        if (localData) notifications = JSON.parse(localData)
+      }
+      return notifications
+    } catch {
+      return []
+    }
+  },
+
+  async saveOKRNotifications(notifications: OKRMilestoneNotification[]): Promise<void> {
+    try {
+      localStorage.setItem(OKR_NOTIFICATIONS_KEY, JSON.stringify(notifications))
+      if (isElectron()) {
+        await window.api!.store.set(OKR_NOTIFICATIONS_KEY, notifications)
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  async addOKRNotification(notification: Omit<OKRMilestoneNotification, 'id' | 'notifiedAt'>): Promise<OKRMilestoneNotification> {
+    const notifications = await this.getOKRNotifications()
+    const newNotification: OKRMilestoneNotification = {
+      ...notification,
+      id: generateId(),
+      notifiedAt: new Date().toISOString()
+    }
+    await this.saveOKRNotifications([...notifications, newNotification])
+    
+    const objectives = await this.getObjectives()
+    const updatedObjectives = objectives.map(o => {
+      if (o.id === notification.objectiveId && !o.notifiedMilestones.includes(notification.milestone)) {
+        return {
+          ...o,
+          notifiedMilestones: [...o.notifiedMilestones, notification.milestone],
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return o
+    })
+    await this.saveObjectives(updatedObjectives)
+    
+    return newNotification
+  },
+
+  async syncTaskKRProgress(taskId: string, completed: boolean): Promise<void> {
+    const objectives = await this.getObjectives()
+    let hasUpdates = false
+    
+    const updatedObjectives = objectives.map(o => {
+      const updatedKRs = o.keyResults.map(kr => {
+        if (kr.taskId === taskId && kr.type === 'task') {
+          hasUpdates = true
+          return {
+            ...kr,
+            currentValue: completed ? kr.targetValue : 0,
+            updatedAt: new Date().toISOString()
+          }
+        }
+        return kr
+      })
+      
+      if (hasUpdates) {
+        return { ...o, keyResults: updatedKRs, updatedAt: new Date().toISOString() }
+      }
+      return o
+    })
+    
+    if (hasUpdates) {
+      await this.saveObjectives(updatedObjectives)
     }
   }
 }

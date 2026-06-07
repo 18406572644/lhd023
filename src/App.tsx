@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Layout, Typography, Button, Tabs, Badge, ConfigProvider, message, Space, Tooltip, Dropdown, notification } from 'antd'
-import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined, RobotOutlined, BookOutlined, VideoCameraOutlined } from '@ant-design/icons'
+import { PlusOutlined, HistoryOutlined, BellOutlined, LogoutOutlined, SettingOutlined, CalendarOutlined, ThunderboltOutlined, FileTextOutlined, AppstoreOutlined, AppstoreAddOutlined, BarChartOutlined, DownOutlined, RobotOutlined, BookOutlined, VideoCameraOutlined, TrophyOutlined } from '@ant-design/icons'
 import dayjs, { Dayjs } from 'dayjs'
-import type { Task, TaskHistory, HotkeyConfig, PendingReminder } from './types'
+import type { Task, TaskHistory, HotkeyConfig, PendingReminder, Objective, KeyResult } from './types'
 import { storage } from './utils/storage'
 import { shouldTriggerTask, generateId, getNextTriggerTime } from './utils/scheduler'
 import { soundManager } from './utils/soundManager'
 import { reminderManager } from './utils/reminderManager'
 import { calendarManager } from './utils/calendarManager'
+import { updateAllObjectivesStatus, syncTaskKRsWithTasks } from './utils/okrManager'
 import { TaskForm } from './components/TaskForm'
 import { QuickTaskForm } from './components/QuickTaskForm'
 import { NaturalLanguageTaskForm } from './components/NaturalLanguageTaskForm'
@@ -21,6 +22,9 @@ import { FullscreenReminder } from './components/FullscreenReminder'
 import { TemplateManager } from './components/TemplateManager'
 import { TaskDetailPanel } from './components/TaskDetailPanel'
 import { StatsPanel } from './components/StatsPanel'
+import { OKRBoard } from './components/OKRBoard'
+import { OKRForm } from './components/OKRForm'
+import { OKRDetailPanel } from './components/OKRDetailPanel'
 
 const { Header, Content } = Layout
 const { Title, Text } = Typography
@@ -52,10 +56,17 @@ const App: React.FC = () => {
   const [widgetEnabled, setWidgetEnabled] = useState(false)
   const [nlpFormOpen, setNlpFormOpen] = useState(false)
   const [vocabManagerOpen, setVocabManagerOpen] = useState(false)
+  const [objectives, setObjectives] = useState<Objective[]>([])
+  const [okrFormOpen, setOkrFormOpen] = useState(false)
+  const [editingObjective, setEditingObjective] = useState<Objective | null>(null)
+  const [okrDetailOpen, setOkrDetailOpen] = useState(false)
+  const [viewingObjective, setViewingObjective] = useState<Objective | null>(null)
   const triggeredTasksRef = useRef<Set<string>>(new Set())
   const intervalRef = useRef<number | null>(null)
   const tasksRef = useRef<Task[]>([])
   const historyRef = useRef<TaskHistory[]>([])
+  const objectivesRef = useRef<Objective[]>([])
+  const okrCheckIntervalRef = useRef<number | null>(null)
   const hotkeyUnsubscribeRef = useRef<(() => void) | null>(null)
   const calendarSyncIntervalRef = useRef<number | null>(null)
   const meetingPrepRemindedRef = useRef<Set<string>>(new Set())
@@ -68,15 +79,21 @@ const App: React.FC = () => {
     historyRef.current = history
   }, [history])
 
+  useEffect(() => {
+    objectivesRef.current = objectives
+  }, [objectives])
+
   const loadData = useCallback(async () => {
     log('加载数据...')
-    const [loadedTasks, loadedHistory] = await Promise.all([
+    const [loadedTasks, loadedHistory, loadedObjectives] = await Promise.all([
       storage.getTasks(),
-      storage.getHistory()
+      storage.getHistory(),
+      storage.getObjectives()
     ])
     setTasks(loadedTasks)
     setHistory(loadedHistory)
-    log('加载完成，任务数:', loadedTasks.length, '历史记录数:', loadedHistory.length)
+    setObjectives(loadedObjectives)
+    log('加载完成，任务数:', loadedTasks.length, '历史记录数:', loadedHistory.length, '目标数:', loadedObjectives.length)
   }, [])
 
   const requestNotificationPermission = useCallback(async () => {
@@ -253,6 +270,16 @@ const App: React.FC = () => {
     }
   }, [])
 
+  const initOKRManager = useCallback(async () => {
+    log('初始化OKR管理器...')
+    try {
+      await updateAllObjectivesStatus()
+      log('OKR管理器初始化完成')
+    } catch (err) {
+      console.error('初始化OKR管理器失败:', err)
+    }
+  }, [])
+
   useEffect(() => {
     loadData()
     requestNotificationPermission()
@@ -260,10 +287,22 @@ const App: React.FC = () => {
     initWidget()
     initReminderManager()
     initCalendarManager()
+    initOKRManager()
 
     const calendarCheckInterval = window.setInterval(() => {
       checkMeetingPrepReminders()
     }, 60000)
+
+    const okrCheckInterval = window.setInterval(async () => {
+      log('检查OKR进度和里程碑...')
+      await updateAllObjectivesStatus()
+      const updatedObjectives = await storage.getObjectives()
+      setObjectives(updatedObjectives)
+      
+      const currentTasks = tasksRef.current
+      await syncTaskKRsWithTasks(currentTasks)
+    }, 300000)
+    okrCheckIntervalRef.current = okrCheckInterval
 
     return () => {
       if (hotkeyUnsubscribeRef.current) {
@@ -272,16 +311,23 @@ const App: React.FC = () => {
       if (calendarSyncIntervalRef.current) {
         clearInterval(calendarSyncIntervalRef.current)
       }
+      if (okrCheckIntervalRef.current) {
+        clearInterval(okrCheckIntervalRef.current)
+      }
       clearInterval(calendarCheckInterval)
       calendarManager.stopAutoSync()
       reminderManager.destroy()
     }
-  }, [loadData, requestNotificationPermission, initHotkeys, initWidget, initReminderManager, initCalendarManager, checkMeetingPrepReminders])
+  }, [loadData, requestNotificationPermission, initHotkeys, initWidget, initReminderManager, initCalendarManager, initOKRManager, checkMeetingPrepReminders])
 
   const saveTasks = useCallback(async (newTasks: Task[]) => {
     setTasks(newTasks)
     await storage.saveTasks(newTasks)
     await storage.broadcastTaskUpdate()
+    
+    await syncTaskKRsWithTasks(newTasks)
+    const updatedObjectives = await storage.getObjectives()
+    setObjectives(updatedObjectives)
   }, [])
 
   const handleToggleWidget = useCallback(async () => {
@@ -639,6 +685,128 @@ const App: React.FC = () => {
     }
   }
 
+  const saveObjectives = useCallback(async (newObjectives: Objective[]) => {
+    setObjectives(newObjectives)
+    await storage.saveObjectives(newObjectives)
+  }, [])
+
+  const handleAddObjective = useCallback(() => {
+    setEditingObjective(null)
+    setOkrFormOpen(true)
+  }, [])
+
+  const handleEditObjective = useCallback((objective: Objective) => {
+    setEditingObjective(objective)
+    setOkrFormOpen(true)
+  }, [])
+
+  const handleOKRFormSubmit = useCallback(async (
+    objectiveData: Omit<Objective, 'id' | 'createdAt' | 'updatedAt' | 'keyResults' | 'notifiedMilestones' | 'status'>,
+    keyResults: Omit<KeyResult, 'id' | 'objectiveId' | 'createdAt' | 'updatedAt'>[]
+  ) => {
+    if (editingObjective) {
+      const updatedObjective: Objective = {
+        ...editingObjective,
+        ...objectiveData,
+        keyResults: editingObjective.keyResults.map(kr => {
+          const updatedKR = keyResults.find(
+            k => k.title === kr.title || k.sortOrder === kr.sortOrder
+          )
+          return updatedKR ? { ...kr, ...updatedKR } : kr
+        }),
+        updatedAt: new Date().toISOString()
+      }
+
+      const newKRs = keyResults.filter(
+        kr => !editingObjective.keyResults.some(
+          existing => existing.title === kr.title || existing.sortOrder === kr.sortOrder
+        )
+      )
+
+      for (const newKR of newKRs) {
+        await storage.addKeyResult(editingObjective.id, newKR)
+      }
+
+      const updatedObjectives = objectives.map(o =>
+        o.id === editingObjective.id ? updatedObjective : o
+      )
+      await saveObjectives(updatedObjectives)
+      message.success('目标已更新')
+
+      if (viewingObjective && viewingObjective.id === editingObjective.id) {
+        setViewingObjective(updatedObjective)
+      }
+    } else {
+      const newObjective = await storage.addObjective(objectiveData)
+      
+      for (const kr of keyResults) {
+        await storage.addKeyResult(newObjective.id, kr)
+      }
+
+      const loadedObjectives = await storage.getObjectives()
+      setObjectives(loadedObjectives)
+      message.success('目标已创建')
+    }
+    
+    setOkrFormOpen(false)
+    setEditingObjective(null)
+    await updateAllObjectivesStatus()
+    loadData()
+  }, [editingObjective, objectives, viewingObjective, saveObjectives, loadData])
+
+  const handleViewObjectiveDetail = useCallback((objective: Objective) => {
+    setViewingObjective(objective)
+    setOkrDetailOpen(true)
+  }, [])
+
+  const handleCloseOKRDetail = useCallback(() => {
+    setOkrDetailOpen(false)
+    setViewingObjective(null)
+  }, [])
+
+  const handleDeleteObjective = useCallback(async (id: string) => {
+    await storage.deleteObjective(id)
+    const updatedObjectives = await storage.getObjectives()
+    setObjectives(updatedObjectives)
+    
+    if (viewingObjective && viewingObjective.id === id) {
+      handleCloseOKRDetail()
+    }
+  }, [viewingObjective, handleCloseOKRDetail])
+
+  const handleUpdateKRProgress = useCallback(async (objectiveId: string, krId: string, currentValue: number) => {
+    await storage.updateKRProgress(objectiveId, krId, currentValue)
+    const updatedObjectives = await storage.getObjectives()
+    setObjectives(updatedObjectives)
+    await updateAllObjectivesStatus()
+    
+    const updatedObjective = updatedObjectives.find(o => o.id === objectiveId)
+    if (updatedObjective && viewingObjective && viewingObjective.id === objectiveId) {
+      setViewingObjective(updatedObjective)
+    }
+  }, [viewingObjective])
+
+  const handleAddKRToObjective = useCallback((objective: Objective) => {
+    setEditingObjective(objective)
+    setOkrFormOpen(true)
+  }, [])
+
+  const handleEditKR = useCallback((objective: Objective) => {
+    message.info('请通过编辑目标来修改KR')
+    handleEditObjective(objective)
+  }, [handleEditObjective])
+
+  const handleDeleteKR = useCallback(async (objectiveId: string, krId: string) => {
+    await storage.deleteKeyResult(objectiveId, krId)
+    const updatedObjectives = await storage.getObjectives()
+    setObjectives(updatedObjectives)
+    
+    const updatedObjective = updatedObjectives.find(o => o.id === objectiveId)
+    if (updatedObjective && viewingObjective && viewingObjective.id === objectiveId) {
+      setViewingObjective(updatedObjective)
+    }
+  }, [viewingObjective])
+
   const handleCreateTaskFromTemplate = useCallback(async (templateId: string) => {
     try {
       const taskData = await storage.createTaskFromTemplate(templateId)
@@ -677,6 +845,8 @@ const App: React.FC = () => {
 
   const calendarTasksCount = tasks.filter(t => t.enabled).length
 
+  const inProgressObjectivesCount = objectives.filter(o => o.status === 'in_progress').length
+
   const tabItems = [
     {
       key: 'tasks',
@@ -714,6 +884,29 @@ const App: React.FC = () => {
           onToggle={handleToggleTask}
           onPin={handlePinTask}
           onViewDetail={handleViewDetail}
+        />
+      )
+    },
+    {
+      key: 'okrs',
+      label: (
+        <Space>
+          <TrophyOutlined />
+          目标管理
+          {inProgressObjectivesCount > 0 && (
+            <Badge count={inProgressObjectivesCount} size="small" />
+          )}
+        </Space>
+      ),
+      children: (
+        <OKRBoard
+          objectives={objectives}
+          tasks={tasks}
+          onAddObjective={handleAddObjective}
+          onEditObjective={handleEditObjective}
+          onViewDetail={handleViewObjectiveDetail}
+          onDeleteObjective={handleDeleteObjective}
+          onUpdateProgress={handleUpdateKRProgress}
         />
       )
     },
@@ -992,6 +1185,29 @@ const App: React.FC = () => {
         onDelete={handleDeleteTask}
         onToggle={handleToggleTask}
         onUpdate={handleUpdateTaskFromDetail}
+      />
+
+      <OKRForm
+        open={okrFormOpen}
+        objective={editingObjective}
+        tasks={tasks}
+        onCancel={() => {
+          setOkrFormOpen(false)
+          setEditingObjective(null)
+        }}
+        onSubmit={handleOKRFormSubmit}
+      />
+
+      <OKRDetailPanel
+        open={okrDetailOpen}
+        objective={viewingObjective}
+        tasks={tasks}
+        onClose={handleCloseOKRDetail}
+        onEdit={handleEditObjective}
+        onEditKR={handleEditKR}
+        onDeleteKR={handleDeleteKR}
+        onUpdateKRProgress={handleUpdateKRProgress}
+        onAddKR={handleAddKRToObjective}
       />
     </ConfigProvider>
   )

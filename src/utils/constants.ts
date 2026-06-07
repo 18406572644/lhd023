@@ -1,4 +1,4 @@
-import type { TaskPriority, TaskTag, TemplateCategory } from '../types'
+import type { TaskPriority, TaskTag, TemplateCategory, OKRStatus, KRType, OKRPriority } from '../types'
 
 export const priorityColors: Record<TaskPriority, string> = {
   low: '#52c41a',
@@ -58,3 +58,54 @@ export const getTaskColor = (priority: TaskPriority, tag: TaskTag): string => {
 
 export const viewTypes = ['month', 'week', 'day'] as const
 export type ViewType = typeof viewTypes[number]
+
+export const okrStatusColors: Record<OKRStatus, string> = {
+  not_started: '#8c8c8c',
+  in_progress: '#1677ff',
+  completed: '#52c41a',
+  paused: '#faad14',
+  cancelled: '#f5222d'
+}
+
+export const okrStatusLabels: Record<OKRStatus, string> = {
+  not_started: '未开始',
+  in_progress: '进行中',
+  completed: '已完成',
+  paused: '已暂停',
+  cancelled: '已取消'
+}
+
+export const krTypeLabels: Record<KRType, string> = {
+  numeric: '数值型',
+  task: '任务型'
+}
+
+export const krTypeColors: Record<KRType, string> = {
+  numeric: '#1677ff',
+  task: '#722ed1'
+}
+
+export const okrPriorityColors: Record<OKRPriority, string> = {
+  low: '#52c41a',
+  medium: '#faad14',
+  high: '#fa8c16',
+  urgent: '#f5222d'
+}
+
+export const okrPriorityLabels: Record<OKRPriority, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  urgent: '紧急'
+}
+
+export const MILESTONES = [25, 50, 75, 100]
+
+export const getProgressColor = (progress: number, overdue: boolean): string => {
+  if (overdue) return '#f5222d'
+  if (progress >= 100) return '#52c41a'
+  if (progress >= 75) return '#13c2c2'
+  if (progress >= 50) return '#1677ff'
+  if (progress >= 25) return '#faad14'
+  return '#8c8c8c'
+}

@@ -284,6 +284,60 @@ export interface TaskCalendarSyncInfo {
   syncDirty?: boolean
 }
 
+export type OKRStatus = 'not_started' | 'in_progress' | 'completed' | 'paused' | 'cancelled'
+
+export type KRType = 'numeric' | 'task'
+
+export type OKRPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface KeyResult {
+  id: string
+  objectiveId: string
+  title: string
+  description: string
+  type: KRType
+  targetValue: number
+  currentValue: number
+  unit: string
+  taskId?: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Objective {
+  id: string
+  title: string
+  description: string
+  startDate: string
+  endDate: string
+  priority: OKRPriority
+  tags: TaskTag[]
+  owner?: string
+  status: OKRStatus
+  keyResults: KeyResult[]
+  createdAt: string
+  updatedAt: string
+  notifiedMilestones: number[]
+}
+
+export interface OKRProgress {
+  objectiveId: string
+  progress: number
+  completedKRs: number
+  totalKRs: number
+  overdue: boolean
+  daysRemaining: number
+}
+
+export interface OKRMilestoneNotification {
+  id: string
+  objectiveId: string
+  objectiveTitle: string
+  milestone: number
+  notifiedAt: string
+}
+
 export interface AppSettings {
   defaultSoundId: string
   sounds: SoundOption[]
